@@ -2254,6 +2254,21 @@ ERRO_BUSCAR_CATEGORIAS_DENUNCIA: {
     mensagem: 'Erro ao buscar as categorias de denúncia.'
 },
 
+LIMITE_ARQUIVOS_POST: {
+    status: 400,
+    mensagem: 'Um post aceita no máximo 10 fotos e vídeos.'
+},
+
+TIPO_ARQUIVO_NAO_PERMITIDO: {
+    status: 400,
+    mensagem: 'Tipo de arquivo não permitido.'
+},
+
+PERFIL_SOCIAL_INCOMPLETO: {
+    status: 403,
+    mensagem: 'Crie seu perfil social antes de publicar.'
+},
+
 }
 
 module.exports = config_message

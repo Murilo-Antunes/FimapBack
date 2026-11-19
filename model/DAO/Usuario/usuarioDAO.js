@@ -89,6 +89,9 @@ const UpdateUsers = async (usuario) => {
         const afetados = result?.[0]?.affectedRows ?? result?.rowCount ?? 0
         return afetados > 0
     } catch (error) {
+        // Valor único repetido (ex.: username_social): o controller responde 409
+        if (error?.code === 'ER_DUP_ENTRY') throw error
+
         console.error('Erro ao atualizar dados do usuário:', error)
         return false
     }

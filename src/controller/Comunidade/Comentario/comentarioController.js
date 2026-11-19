@@ -70,7 +70,15 @@ const formatarComentario = (c) => ({
     data_criacao: c.data_criacao,
     id_usuario: c.id_usuario,
     id_post: c.id_post,
-    id_comentario_pai: c.id_comentario_pai ?? null
+    id_comentario_pai: c.id_comentario_pai ?? null,
+    autor: {
+        id: c.autor_id ?? c.id_usuario,
+        nome_exibicao: c.autor_nome_exibicao ?? null,
+        username_social: c.autor_username_social ?? null,
+        foto_perfil: c.autor_foto_perfil ?? null
+    },
+    total_curtidas: Number(c.total_curtidas ?? 0),
+    curtiu: Boolean(Number(c.curtiu ?? 0))
 })
 
 // Igual ao formatarComentario, mas inclui a quantidade de respostas diretas
@@ -164,7 +172,7 @@ const criarComentario = async (req, res) => {
             }
 
             if (Number(pai.id_post) !== id_post) {
-                return responderErro(res, config_message.COMENTARIO_PAI_INVALIDO)
+                return responderErro(res, config_message.COMENTARIO_PAI_OUTRO_POST)
             }
         }
 
@@ -180,7 +188,7 @@ const criarComentario = async (req, res) => {
             return responderErro(res, config_message.ERRO_CRIAR_COMENTARIO)
         }
 
-        const criado = await comentarioDAO.GetComentarioById(id_comentario)
+        const criado = await comentarioDAO.GetComentarioComAutorById(id_comentario, id_usuario)
 
         if (!criado) {
             return responderErro(res, config_message.ERRO_CRIAR_COMENTARIO)
@@ -239,7 +247,9 @@ const listarComentariosPorPost = async (req, res) => {
         }
 
         // [] = post sem comentários (sucesso)
-        const comentarios = await comentarioDAO.GetAllComentariosByIdPost(id_post)
+        // id_usuario (query) só serve para marcar "curtiu"; sem ele, curtiu = false
+        const idVisualizador = Number(req.query?.id_usuario) || 0
+        const comentarios = await comentarioDAO.GetAllComentariosByIdPost(id_post, idVisualizador)
 
         const lista = req.query?.formato === 'lista'
             ? comentarios.map(formatarComentario)
@@ -271,7 +281,7 @@ const listarRespostas = async (req, res) => {
             return responderErro(res, config_message.COMENTARIO_NAO_ENCONTRADO)
         }
 
-        const respostas = await comentarioDAO.GetRespostasByIdComentarioPai(id_comentario)
+        const respostas = await comentarioDAO.GetRespostasByIdComentarioPai(id_comentario, Number(req.query?.id_usuario) || 0)
 
         const formatadas = respostas.map(formatarComentarioComTotal)
 

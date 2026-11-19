@@ -14,6 +14,11 @@ const TEXTO_MAX_CARACTERES = 2000
 // também protege o servidor e o Cloudinary)
 const ARQUIVOS_MAX_POR_POST = 10
 
+// Paginação do feed
+const FEED_LIMITE_PADRAO = 12
+const FEED_LIMITE_MAX = 30
+const FEED_BUSCA_MAX_CARACTERES = 100
+
 // Tipos permitidos no array "conteudo" salvo no banco.
 // Ex.: [{ tipo: 'texto', valor: 'Olá' }, { tipo: 'foto', valor: 'https://...' }]
 const TIPOS = ['texto', 'foto', 'video']
@@ -133,8 +138,24 @@ const formatarPost = (p) => ({
     data_atualizacao: p.data_atualizacao,
     status: Number(p.status) === STATUS_ATIVO ? 'ativo' : 'inativo',
     id_usuario: p.id_usuario,
-    conteudo: lerConteudo(p.conteudo)
+    conteudo: lerConteudo(p.conteudo),
+    autor: {
+        id: p.autor_id ?? p.id_usuario,
+        nome_exibicao: p.autor_nome_exibicao ?? null,
+        username_social: p.autor_username_social ?? null,
+        foto_perfil: p.autor_foto_perfil ?? null
+    },
+    total_curtidas: Number(p.total_curtidas ?? 0),
+    total_comentarios: Number(p.total_comentarios ?? 0),
+    curtiu: Boolean(Number(p.curtiu ?? 0))
 })
+
+// Perfil social completo = nome_exibicao E username_social preenchidos
+const perfilSocialCompleto = (u) =>
+    Boolean(u?.nome_exibicao?.trim() && u?.username_social?.trim())
+
+// Id do usuário que está vendo (só para marcar "curtiu"); 0 quando não informado
+const idDoVisualizador = (req) => Number(req.query?.id_usuario) || 0
 
 /* ========================== HELPERS: UPLOADS ========================== */
 
@@ -235,6 +256,16 @@ const criarPost = async (req, res) => {
             return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
         }
 
+        // Só publica quem já criou o perfil social (o feed mostra o autor)
+        const perfil = await postDAO.GetPerfilSocial(id_usuario)
+
+        if (!perfilSocialCompleto(perfil)) {
+            return responderErro(res, config_message.PERFIL_SOCIAL_INCOMPLETO ?? {
+                status: 403,
+                mensagem: 'Crie seu perfil social antes de publicar.'
+            })
+        }
+
         const texto = lerTexto(req)
 
         if (textoInvalido(texto)) {
@@ -287,7 +318,7 @@ const criarPost = async (req, res) => {
         // O post foi criado: não apagar os arquivos
         enviadas.length = 0
 
-        const criado = await postDAO.GetPostById(id_post)
+        const criado = await postDAO.GetPostById(id_post, id_usuario)
 
         return responderSucesso(res, config_message.POST_CRIADO, {
             post: formatarPost(criado)
@@ -330,7 +361,7 @@ const buscarPostPorId = async (req, res) => {
             return responderErro(res, config_message.ID_POST_INVALIDO)
         }
 
-        const post = await postDAO.GetPostById(id_post)
+        const post = await postDAO.GetPostById(id_post, idDoVisualizador(req))
 
         if (!post || Number(post.status) !== STATUS_ATIVO) {
             return responderErro(res, config_message.POST_NAO_ENCONTRADO)
@@ -343,6 +374,46 @@ const buscarPostPorId = async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar post:', error)
         return responderErro(res, config_message.ERRO_BUSCAR_POST)
+    }
+}
+
+// GET /feed?pagina=1&limite=12&ordem=recentes|antigos&busca=&id_usuario=
+// Feed da comunidade: posts ativos de todos os usuários com perfil social completo,
+// já com autor, total_curtidas, total_comentarios e curtiu (do id_usuario informado).
+// Sem posts, a resposta é sucesso com lista vazia.
+const listarFeed = async (req, res) => {
+    try {
+        const pagina = Math.max(parseInt(req.query?.pagina, 10) || 1, 1)
+        const limite = Math.min(
+            Math.max(parseInt(req.query?.limite, 10) || FEED_LIMITE_PADRAO, 1),
+            FEED_LIMITE_MAX
+        )
+        const ordem = req.query?.ordem === 'antigos' ? 'antigos' : 'recentes'
+        const busca = typeof req.query?.busca === 'string'
+            ? req.query.busca.trim().slice(0, FEED_BUSCA_MAX_CARACTERES)
+            : ''
+
+        const { posts, total } = await postDAO.GetFeedPosts({
+            idVisualizador: idDoVisualizador(req),
+            limite,
+            offset: (pagina - 1) * limite,
+            ordem,
+            busca
+        })
+
+        const formatados = posts.map(formatarPost)
+
+        return responderSucesso(res, config_message.POSTS_ENCONTRADOS, {
+            pagina,
+            limite,
+            total,
+            quantidade: formatados.length,
+            posts: formatados
+        })
+
+    } catch (error) {
+        console.error('Erro ao listar feed:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_POSTS)
     }
 }
 
@@ -496,6 +567,7 @@ const deletarPost = async (req, res) => {
 
 module.exports = {
     criarPost,
+    listarFeed,
     buscarPostPorId,
     listarPostsPorUsuario,
     listarPostsInativos,
