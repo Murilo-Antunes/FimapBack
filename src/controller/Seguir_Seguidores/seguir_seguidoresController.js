@@ -75,9 +75,35 @@ const listarSeguindo = async (req, res) => {
     }
 }  
 
+// GET /seguir/verificar?id_seguidor=1&id_seguindo=2
+// Responde { segue: boolean }. Evita que o front precise baixar a lista
+// inteira de seguidores só pra saber se "eu" sigo "fulano".
+const verificarSegue = async (req, res) => {
+    try {
+        const id_seguidor = Number(req.query?.id_seguidor)
+        const id_seguindo = Number(req.query?.id_seguindo)
+
+        const idValido = (id) => Number.isInteger(id) && id > 0
+
+        if (!idValido(id_seguidor) || !idValido(id_seguindo)) {
+            return res.status(400).json({ sucesso: false, mensagem: 'Informe id_seguidor e id_seguindo válidos.' })
+        }
+
+        const segue = await seguir_seguidoresDAO.ExisteRelacao(id_seguidor, id_seguindo) // TODO: implementar no DAO
+
+        return res.status(200).json({ sucesso: true, mensagem: 'Verificação concluída.', segue })
+
+    } catch (error) {
+        console.error('Erro ao verificar se segue:', error)
+        return res.status(500).json({ sucesso: false, mensagem: 'Erro interno do servidor.' })
+    }
+}
+
+
 module.exports = {
     seguir,
     deixarDeSeguir,
     listarSeguidores,
-    listarSeguindo
+    listarSeguindo,
+    verificarSegue
 }

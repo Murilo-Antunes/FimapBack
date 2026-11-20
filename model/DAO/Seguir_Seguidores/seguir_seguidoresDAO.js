@@ -78,11 +78,20 @@ const getSeguindoByUsuarioId = async (id_usuario) => {
     }
 }
 
+async function ExisteRelacao(id_seguidor, id_seguindo) {
+    const [rows] = await db.execute(
+        'SELECT id FROM tbl_seguidores WHERE id_seguidor = ? AND id_seguindo = ? LIMIT 1',
+        [id_seguidor, id_seguindo],
+    )
+    return rows.length > 0
+}
+
 
 module.exports = {
     createSeguir,
     deleteSeguir,
     getSeguidoresByUsuarioId,
-    getSeguindoByUsuarioId
+    getSeguindoByUsuarioId,
+    ExisteRelacao
 
 }

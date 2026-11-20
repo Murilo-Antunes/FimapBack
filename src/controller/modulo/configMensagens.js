@@ -2268,6 +2268,22 @@ PERFIL_SOCIAL_INCOMPLETO: {
     status: 403,
     mensagem: 'Crie seu perfil social antes de publicar.'
 },
+POST_JA_SALVO:        { status: 409, mensagem: 'Você já salvou esta publicação.' },
+POST_SALVO_CRIADO:    { status: 201, mensagem: 'Publicação salva.' },
+ERRO_SALVAR_POST:     { status: 500, mensagem: 'Erro ao salvar publicação.' },
+SALVO_NAO_ENCONTRADO: { status: 404, mensagem: 'Publicação não estava salva.' },
+SALVO_REMOVIDO:       { status: 200, mensagem: 'Publicação removida dos salvos.' },
+ERRO_DESSALVAR_POST:  { status: 500, mensagem: 'Erro ao remover dos salvos.' },
+SALVOS_ENCONTRADOS:   { status: 200, mensagem: 'Posts salvos encontrados.' },
+ERRO_BUSCAR_SALVOS:   { status: 500, mensagem: 'Erro ao buscar posts salvos.' },
+
+// denúncia de usuário
+ID_CATEGORIA_INVALIDO:  { status: 400, mensagem: 'Categoria de denúncia inválida.' },
+DENUNCIA_AUTO_DENUNCIA:  { status: 400, mensagem: 'Você não pode denunciar a si mesmo.' },
+
+// níveis
+NIVEIS_ENCONTRADOS:  { status: 200, mensagem: 'Níveis encontrados.' },
+ERRO_BUSCAR_NIVEIS:  { status: 500, mensagem: 'Erro ao buscar níveis.' },
 
 }
 

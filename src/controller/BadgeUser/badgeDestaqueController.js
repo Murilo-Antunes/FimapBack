@@ -50,4 +50,24 @@ const definirBadgesDestaque = async (req, res) => {
     }
 }
 
-module.exports = { definirBadgesDestaque }
+// NOVA: GET /badge-usuario/destaques/:id_usuario
+// Devolve os ids de badge marcados como destaque. O front usa isso pra saber
+// quais badges mostrar em "Badges em Destaque" no próprio perfil.
+const buscarBadgesDestaque = async (req, res) => {
+    try {
+        const id_usuario = Number(req.params.id_usuario)
+
+        if (!idValido(id_usuario)) {
+            return responder(res, 400, false, 'Id de usuário inválido.')
+        }
+
+        const ids_badge = await badgeDestaqueDAO.BuscarIdsDestaque(id_usuario)
+
+        return responder(res, 200, true, 'Badges em destaque encontradas.', { ids_badge })
+    } catch (error) {
+        console.error('Erro ao buscar badges em destaque:', error)
+        return responder(res, 500, false, (config_message.ERRO_INTERNO || {}).mensagem || 'Erro interno do servidor.')
+    }
+}
+
+module.exports = { definirBadgesDestaque, buscarBadgesDestaque }

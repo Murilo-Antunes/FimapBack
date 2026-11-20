@@ -50,7 +50,18 @@ const DefinirDestaques = async (idUsuario, idsBadge) => {
     }
 }
 
+// NOVA: devolve os ids de badge marcados como destaque pelo usuário.
+async function BuscarIdsDestaque(id_usuario) {
+    const [rows] = await knexConex.execute(
+        `SELECT id_badge FROM tbl_badge_usuario WHERE id_usuario = ? AND em_destaque = 1`,
+        [id_usuario],
+    )
+
+    return rows.map((r) => r.id_badge)
+}
+
 module.exports = {
     ContarBadgesDoUsuario,
-    DefinirDestaques
+    DefinirDestaques,
+    BuscarIdsDestaque
 }
