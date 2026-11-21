@@ -40,9 +40,29 @@ const obterResultados = (resposta) => {
     return resposta?.results ?? []
 }
 
+const obterResultadosDoRecurso = (resposta, campo, id, validarVinculo) => {
+    const resultados = obterResultados(resposta)
+    if (validarVinculo && resultados.some((resultado) => resultado[campo] !== id))
+        throw new Error('VINCULO_PRODUTO_INVALIDO')
+    return resultados
+}
+
 const verificarSincronizacao = async (itemId) => {
     const item = await pluggy.fetchItem(itemId)
     return item.status === "UPDATING"
+}
+
+const validarItemDoUsuario = async (itemId, usuario, agora) => {
+    const item = await pluggy.fetchItem(itemId)
+    if (!item || item.id !== itemId || item.clientUserId !== String(usuario)) return null
+    if (item.consentExpiresAt && !(new Date(item.consentExpiresAt) > agora)) return null
+    if (!['UPDATED', 'UPDATING', 'OUTDATED', 'PARTIAL_SUCCESS'].includes(item.status)) return null
+    return {
+        atualizando: item.status === 'UPDATING',
+        parcial: item.status !== 'UPDATED' || item.executionStatus === 'PARTIAL_SUCCESS' ||
+            item.hasResourcesPendingAuthorization === true,
+        atualizadoEm: item.lastUpdatedAt ?? null
+    }
 }
 
 const criarConnectToken = async (clientUserId) => {
@@ -57,7 +77,7 @@ const criarConnectToken = async (clientUserId) => {
 // CONTAS
 // ============================================
 
-const listarContas = async (itemId) => {
+const listarContas = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -65,14 +85,15 @@ const listarContas = async (itemId) => {
         }
     }
 
+    sinal?.throwIfAborted()
     const resposta = await pluggy.fetchAccounts(itemId)
 
-    const contas = obterResultados(resposta).map((conta) => ({
+    const contas = obterResultadosDoRecurso(resposta, 'itemId', itemId, validarVinculo).map((conta) => ({
         id: conta.id,
         nome: conta.name,
         tipo: conta.type,
         subtipo: conta.subtype,
-        saldo: numeroOuNull(conta.balance) ?? 0,
+        saldo: numeroOuNull(conta.balance) ?? (preservarAusencia ? null : 0),
         moeda: conta.currencyCode,
 
         instituicao:
@@ -130,8 +151,8 @@ const buscarSaldo = async (itemId) => {
 // CARTÕES
 // ============================================
 
-const listarCartoes = async (itemId) => {
-    const resultado = await listarContas(itemId)
+const listarCartoes = async (itemId, { resultadoContas } = {}) => {
+    const resultado = resultadoContas ?? await listarContas(itemId)
 
     if (resultado.atualizando) {
         return {
@@ -390,7 +411,7 @@ const listarTransacoesCartao = async (itemId, cartaoId, limite = 20) => {
 // INVESTIMENTOS
 // ============================================
 
-const listarInvestimentos = async (itemId) => {
+const listarInvestimentos = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -398,9 +419,10 @@ const listarInvestimentos = async (itemId) => {
         }
     }
 
+    sinal?.throwIfAborted()
     const resposta = await pluggy.fetchInvestments(itemId)
 
-    const investimentos = obterResultados(resposta).map(
+    const investimentos = obterResultadosDoRecurso(resposta, 'itemId', itemId, validarVinculo).map(
         (investimento) => ({
             id: investimento.id,
             nome: investimento.name,
@@ -410,7 +432,7 @@ const listarInvestimentos = async (itemId) => {
                 investimento.balance,
                 investimento.value,
                 investimento.amount
-            ) ?? 0,
+            ) ?? (preservarAusencia ? null : 0),
             moeda: investimento.currencyCode,
 
             instituicao:
@@ -564,11 +586,7 @@ const construirCronogramaParcelas = (emprestimo) => {
     // NUNCA usa esse campo cru pra gerar linhas. Usa a soma dos agregados (que são os
     // mesmos números já exibidos como "16 pagas, 8 restantes") e ainda trava num teto.
     if (totalBruto !== null && totalBruto !== totalCalculado) {
-        console.warn(
-            `[emprestimos] totalNumberOfInstallments (${totalBruto}) inconsistente com ` +
-            `paidInstallments+dueInstallments (${totalCalculado}) no empréstimo ${emprestimo.id}. ` +
-            `Usando o valor calculado.`
-        )
+        console.warn('[emprestimos] Total informado diverge da soma de parcelas pagas e restantes.')
     }
 
     const totalParcelas = Math.min(totalCalculado, LIMITE_MAXIMO_PARCELAS_GERADAS)
@@ -610,10 +628,10 @@ const construirCronogramaParcelas = (emprestimo) => {
     }
 }
 
-const mapearEmprestimo = (emprestimo) => {
+const mapearEmprestimo = (emprestimo, cronograma = construirCronogramaParcelas(emprestimo)) => {
     const pagamentos = emprestimo.payments ?? {}
     const infoParcelas = emprestimo.installments ?? {}
-    const { valorParcelaPadrao } = construirCronogramaParcelas(emprestimo)
+    const { valorParcelaPadrao } = cronograma
 
     return {
         id: emprestimo.id,
@@ -645,7 +663,7 @@ const mapearEmprestimo = (emprestimo) => {
     }
 }
 
-const listarEmprestimos = async (itemId) => {
+const listarEmprestimos = async (itemId, { incluirParcelas = false, validarVinculo = false, sinal } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -653,8 +671,17 @@ const listarEmprestimos = async (itemId) => {
         }
     }
 
+    sinal?.throwIfAborted()
     const resposta = await pluggy.fetchLoans(itemId)
-    const emprestimos = obterResultados(resposta).map(mapearEmprestimo)
+    const emprestimos = obterResultadosDoRecurso(resposta, 'itemId', itemId, validarVinculo).map((emprestimo) => {
+        const cronograma = construirCronogramaParcelas(emprestimo)
+        const resumo = mapearEmprestimo(emprestimo, cronograma)
+        if (!incluirParcelas) return resumo
+        const quantidadeEsperada = (resumo.parcelasPagas ?? 0) + (resumo.parcelasRestantes ?? 0)
+        const pagamentosIdentificados = cronograma.parcelas.filter(({ status }) => status !== 'PENDENTE').length
+        const cronogramaParcial = cronograma.parcelas.length < quantidadeEsperada || pagamentosIdentificados < resumo.parcelasPagas
+        return { ...resumo, parcelas: cronograma.parcelas, cronogramaParcial }
+    })
 
     return {
         atualizando: false,
@@ -689,7 +716,8 @@ const obterDetalheEmprestimo = async (itemId, emprestimoId, opcoes = {}) => {
     }
 
     const emprestimoBruto = await buscarEmprestimoBruto(itemId, emprestimoId)
-    const { totalParcelas, parcelas } = construirCronogramaParcelas(emprestimoBruto)
+    const cronograma = construirCronogramaParcelas(emprestimoBruto)
+    const { totalParcelas, parcelas } = cronograma
 
     const pendentes = parcelas.filter((p) => p.status === 'PENDENTE')
     const amortizadas = parcelas.filter((p) => p.status === 'AMORTIZADA')
@@ -706,7 +734,7 @@ const obterDetalheEmprestimo = async (itemId, emprestimoId, opcoes = {}) => {
 
     return {
         atualizando: false,
-        emprestimo: mapearEmprestimo(emprestimoBruto),
+        emprestimo: mapearEmprestimo(emprestimoBruto, cronograma),
         totalParcelas,
         pendentes,
         amortizadas,
@@ -732,8 +760,9 @@ const obterDetalheEmprestimo = async (itemId, emprestimoId, opcoes = {}) => {
 // TRANSAÇÕES
 // ============================================
 
-const listarTransacoes = async (itemId) => {
-    const resultadoContas = await listarContas(itemId)
+const listarTransacoes = async (itemId, opcoes = {}) => {
+    const { resultadoContas: contasCarregadas, dateFrom, dateTo, sinal, permitirParcial = false, validarVinculo = false } = opcoes
+    const resultadoContas = contasCarregadas ?? await listarContas(itemId)
 
     if (resultadoContas.atualizando) {
         return {
@@ -744,28 +773,41 @@ const listarTransacoes = async (itemId) => {
 
     const contas = resultadoContas.contas ?? []
 
-    const resultados = await Promise.all(
-        contas.map(async (conta) => {
-            const resposta =
-                await pluggy.fetchAllTransactions(conta.id)
+    const buscar = async (conta) => {
+        sinal?.throwIfAborted()
+        const resposta = await pluggy.fetchAllTransactions(conta.id, { dateFrom, dateTo })
 
-            return obterResultados(resposta).map((transacao) => ({
-                id: transacao.id,
-                contaId: conta.id,
-                contaNome: conta.nome,
-                descricao: transacao.description,
-                valor: numeroOuNull(transacao.amount) ?? 0,
-                data: transacao.date,
-                tipo: transacao.type ?? null,
-                categoria: transacao.category ?? transacao.merchant?.category ?? null,
-                status: transacao.status ?? null,
-                moeda: transacao.currencyCode ?? conta.moeda,
+        return obterResultadosDoRecurso(resposta, 'accountId', conta.id, validarVinculo).map((transacao) => ({
+            id: transacao.id,
+            contaId: conta.id,
+            contaNome: conta.nome,
+            descricao: transacao.description,
+            valor: numeroOuNull(transacao.amount) ?? (permitirParcial ? null : 0),
+            data: transacao.date,
+            tipo: transacao.type ?? null,
+            categoria: transacao.category ?? transacao.merchant?.category ?? null,
+            status: transacao.status ?? null,
+            moeda: transacao.currencyCode ?? conta.moeda,
+            instituicao: conta.instituicao,
+        }))
+    }
 
-                
-                instituicao: conta.instituicao,
-            }))
-        })
-    )
+    let resultados
+    let falhas = 0
+    if (permitirParcial) {
+        resultados = []
+        for (let indice = 0; indice < contas.length; indice += 4) {
+            sinal?.throwIfAborted()
+            const lote = await Promise.allSettled(contas.slice(indice, indice + 4).map(buscar))
+            for (const resultado of lote) {
+                if (resultado.status === 'fulfilled') resultados.push(resultado.value)
+                else falhas++
+            }
+        }
+        if (falhas && !resultados.length) throw new Error('TRANSACOES_INDISPONIVEIS')
+    } else {
+        resultados = await Promise.all(contas.map(buscar))
+    }
 
     const transacoes = resultados
         .flat()
@@ -776,6 +818,7 @@ const listarTransacoes = async (itemId) => {
         atualizando: false,
         total: transacoes.length,
         transacoes,
+        ...(falhas ? { parcial: true } : {}),
     }
 }
 
@@ -817,6 +860,7 @@ module.exports = {
     obterGastosCartaoPorCategoria,
     listarTransacoesCartao,
     verificarSincronizacao,
+    validarItemDoUsuario,
     listarEvolucaoInvestimentos,
     listarEmprestimos,
     obterDetalheEmprestimo

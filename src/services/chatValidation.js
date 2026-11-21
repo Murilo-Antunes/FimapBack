@@ -7,11 +7,22 @@
 const criarErro = (statusCode, message, code) =>
     Object.assign(new Error(message), { statusCode, code })
 
+const VERSAO_CONTEXTO_FINANCEIRO = 1
+const LIMITE_CONTEXTO_FINANCEIRO_BYTES = 12_000
+
 // Evita que valores como true ou objetos sejam aceitos como IDs por conversão automática.
 const validarId = (valor) => {
     if (typeof valor !== 'number' && (typeof valor !== 'string' || !/^\d+$/.test(valor))) return null
     const id = Number(valor)
     return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+const idUsuarioAutenticado = (req) => {
+    const id = validarId(req.usuario?.id)
+    if (!id) throw criarErro(401, 'Usuário não autenticado.', 'TOKEN_INVALIDO')
+    if (req.params?.id_usuario !== undefined && validarId(req.params.id_usuario) !== id)
+        throw criarErro(404, 'Recurso não encontrado.', 'CHAT_NAO_ENCONTRADO')
+    return id
 }
 
 // O cliente pode mandar perguntas e respostas anteriores, mas não um prompt de sistema.
@@ -38,4 +49,5 @@ const validarRequisicaoId = (valor) => {
     return valor.toLowerCase()
 }
 
-module.exports = { criarErro, validarId, validarMensagens, validarRequisicaoId }
+module.exports = { criarErro, validarId, idUsuarioAutenticado, validarMensagens, validarRequisicaoId,
+    VERSAO_CONTEXTO_FINANCEIRO, LIMITE_CONTEXTO_FINANCEIRO_BYTES }
