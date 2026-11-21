@@ -1,56 +1,54 @@
 const knex = require('knex')
 
-const knexConfig = require('../../Database_config_knex/KnexFile.js')
-const knexConex = knex(knexConfig.development)
+const knexConfig = require('../../../Database_config_knex/KnexFile.js')
+const knexConex = knex(knexConfig.development) // TODO: troque 'development' se usar outro ambiente
 
 async function GetPostSalvo(id_usuario, id_post) {
-    const [rows] = await knexConex.execute(
-        `SELECT id FROM tbl_post_salvo WHERE id_usuario = ? AND id_post = ?`,
-        [id_usuario, id_post],
-    )
-    return rows[0] ?? null
+    const row = await knexConex('tbl_post_salvo')
+        .select('id')
+        .where({ id_usuario, id_post })
+        .first()
+
+    return row ?? null
 }
 
 async function CreatePostSalvo({ id_usuario, id_post }) {
-    const [resultado] = await knexConex.execute(
-        `INSERT INTO tbl_post_salvo (id_usuario, id_post) VALUES (?, ?)`,
-        [id_usuario, id_post],
-    )
-    return resultado.insertId
+    const [id] = await knexConex('tbl_post_salvo').insert({ id_usuario, id_post })
+    return id
 }
 
 async function DeletePostSalvo(id_usuario, id_post) {
-    const [resultado] = await knexConex.execute(
-        `DELETE FROM tbl_post_salvo WHERE id_usuario = ? AND id_post = ?`,
-        [id_usuario, id_post],
-    )
-    return resultado.affectedRows > 0
+    const linhasApagadas = await knexConex('tbl_post_salvo')
+        .where({ id_usuario, id_post })
+        .del()
+
+    return linhasApagadas > 0
 }
 
-// Devolve os posts salvos já no mesmo formato da vw_feed_comunidade, pra dar
-// pra reaproveitar o mesmo tipo "Post" / PostCard.vue no front.
+// Devolve os posts salvos no mesmo "formato cru" de antes — o mapeamento pro
+// formato que o PostCard.vue espera já foi tratado no front (profile.service.ts).
 async function GetAllPostsSalvosByIdUsuario(id_usuario) {
-    const [rows] = await knexConex.execute(
-        `SELECT
-            p.id AS id_post,
-            p.conteudo,
-            p.data_criacao,
-            p.data_atualizacao,
-            u.id AS id_autor,
-            COALESCE(u.nome_exibicao, u.nome) AS autor_nome,
-            u.username_social,
-            u.foto_perfil,
-            u.nivel_total,
-            ps.data_salvo,
-            (SELECT COUNT(*) FROM tbl_curtida_post cp WHERE cp.id_post = p.id) AS total_curtidas,
-            (SELECT COUNT(*) FROM tbl_comentario c WHERE c.id_post = p.id) AS total_comentarios
-         FROM tbl_post_salvo ps
-         INNER JOIN tbl_post p ON p.id = ps.id_post
-         INNER JOIN tbl_usuario u ON u.id = p.id_usuario
-         WHERE ps.id_usuario = ? AND p.status = 1
-         ORDER BY ps.data_salvo DESC`,
-        [id_usuario],
-    )
+    const rows = await knexConex({ ps: 'tbl_post_salvo' })
+        .innerJoin({ p: 'tbl_post' }, 'p.id', 'ps.id_post')
+        .innerJoin({ u: 'tbl_usuario' }, 'u.id', 'p.id_usuario')
+        .where('ps.id_usuario', id_usuario)
+        .andWhere('p.status', 1)
+        .select(
+            'p.id as id_post',
+            'p.conteudo',
+            'p.data_criacao',
+            'p.data_atualizacao',
+            'u.id as id_autor',
+            knexConex.raw('COALESCE(u.nome_exibicao, u.nome) as autor_nome'),
+            'u.username_social',
+            'u.foto_perfil',
+            'u.nivel_total',
+            'ps.data_salvo',
+            knexConex.raw('(SELECT COUNT(*) FROM tbl_curtida_post cp WHERE cp.id_post = p.id) as total_curtidas'),
+            knexConex.raw('(SELECT COUNT(*) FROM tbl_comentario c WHERE c.id_post = p.id) as total_comentarios'),
+        )
+        .orderBy('ps.data_salvo', 'desc')
+
     return rows
 }
 

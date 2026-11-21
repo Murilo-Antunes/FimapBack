@@ -893,6 +893,5 @@ module.exports = {
     buscarUsuarioPorEmail,
     login,
     validarCodigoOTP,
-    buscarTodosCodigos,
-    buscarUsuarioPorUsernameSocial
+    buscarTodosCodigos
 }

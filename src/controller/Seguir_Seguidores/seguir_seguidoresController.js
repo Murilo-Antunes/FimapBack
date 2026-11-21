@@ -89,9 +89,9 @@ const verificarSegue = async (req, res) => {
             return res.status(400).json({ sucesso: false, mensagem: 'Informe id_seguidor e id_seguindo válidos.' })
         }
 
-        const segue = await seguir_seguidoresDAO.ExisteRelacao(id_seguidor, id_seguindo) // TODO: implementar no DAO
+        const relacao = await seguir_seguidoresDAO.verificarSegue(id_seguidor, id_seguindo)
 
-        return res.status(200).json({ sucesso: true, mensagem: 'Verificação concluída.', segue })
+        return res.status(200).json({ sucesso: true, mensagem: 'Verificação concluída.', segue: Boolean(relacao) })
 
     } catch (error) {
         console.error('Erro ao verificar se segue:', error)

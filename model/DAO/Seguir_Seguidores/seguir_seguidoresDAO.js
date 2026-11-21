@@ -79,11 +79,17 @@ const getSeguindoByUsuarioId = async (id_usuario) => {
 }
 
 async function ExisteRelacao(id_seguidor, id_seguindo) {
-    const [rows] = await db.execute(
-        'SELECT id FROM tbl_seguidores WHERE id_seguidor = ? AND id_seguindo = ? LIMIT 1',
-        [id_seguidor, id_seguindo],
-    )
-    return rows.length > 0
+    try{
+        const relacao = await knexConex('tbl_seguidores')
+            .select('id')
+            .where({ id_seguidor, id_seguindo })
+            .first()
+        return relacao
+
+    }catch(error){
+        console.error("Erro ao bsucar relações de seguindo e seguidor:", error)
+    }
+    
 }
 
 
