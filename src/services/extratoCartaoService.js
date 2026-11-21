@@ -43,13 +43,15 @@ function comCache(chave, ttlMs, buscar) {
  * @param {string} itemId   conexão (item) do Pluggy
  * @param {string} cartaoId id da conta de cartão no Pluggy
  * @param {string} [mesSolicitado] AAAA-MM (mês de vencimento); sem ele, usa a fatura atual
+ * @param {AbortSignal} [sinal] interrompe as próximas leituras quando a chamada é cancelada
  */
-const obterExtratoCartao = async (itemId, cartaoId, mesSolicitado) => {
+const obterExtratoCartao = async (itemId, cartaoId, mesSolicitado, sinal) => {
     if (await verificarSincronizacao(itemId)) {
         return { atualizando: true }
     }
 
     // O cartão precisa pertencer ao item informado (evita ler a conta de outra conexão).
+    sinal?.throwIfAborted()
     const contas = await comCache(`contas:${itemId}`, TTL_CONTA_E_FATURAS_MS, () =>
         pluggyApi.listarContasCartao(itemId),
     )
@@ -58,6 +60,7 @@ const obterExtratoCartao = async (itemId, cartaoId, mesSolicitado) => {
         throw new ErroExtrato(404, 'CARTAO_NAO_ENCONTRADO', 'Cartão não encontrado para esta conexão.')
     }
 
+    sinal?.throwIfAborted()
     const [faturas, categorias, instituicao] = await Promise.all([
         comCache(`faturas:${cartaoId}`, TTL_CONTA_E_FATURAS_MS, () => pluggyApi.listarFaturas(cartaoId)),
         comCache('categorias', TTL_CATEGORIAS_MS, () => pluggyApi.listarCategorias()),
@@ -85,6 +88,7 @@ const obterExtratoCartao = async (itemId, cartaoId, mesSolicitado) => {
     const fechamentoAnterior = todosPeriodos[indice + 1]?.fechamento ?? null
     const janela = mapper.janelaDeBusca(periodo, fechamentoAnterior)
 
+    sinal?.throwIfAborted()
     const transacoes = await comCache(
         `transacoes:${cartaoId}:${janela.dateFrom}:${janela.dateTo}`,
         TTL_TRANSACOES_MS,

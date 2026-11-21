@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto')
 const dao = require('../../../model/DAO/MensagemChat/MensagemChatDAO.js')
 const service = require('../../services/chatRequestService.js')
-const { criarErro, validarId, validarMensagens, validarRequisicaoId } = require('../../services/chatValidation.js')
+const { criarErro, validarId, idUsuarioAutenticado, validarMensagens, validarRequisicaoId } = require('../../services/chatValidation.js')
 const { transmitir, responderErro } = require('../../services/chatStream.js')
 
 const chatId = (req) => {
@@ -9,14 +9,9 @@ const chatId = (req) => {
     if (!id) throw criarErro(400, 'ID do chat inválido.', 'CHAT_ID_INVALIDO')
     return id
 }
-const idUsuario = (req) => {
-    const id = validarId(req.params.id_usuario ?? req.body?.id_usuario)
-    if (!id) throw criarErro(400, 'ID do usuário inválido.', 'USUARIO_ID_INVALIDO')
-    return id
-}
 const listarMensagensChat = async (req, res) => {
     try {
-        const mensagens = await dao.listarMensagensChat(chatId(req), idUsuario(req))
+        const mensagens = await dao.listarMensagensChat(chatId(req), idUsuarioAutenticado(req))
         if (!mensagens) throw criarErro(404, 'Chat não encontrado.', 'CHAT_NAO_ENCONTRADO')
         return res.json({ sucesso: true, mensagem: 'Mensagens consultadas com sucesso.', conteudo: mensagens })
     } catch (error) { return responderErro(res, error) }
@@ -24,7 +19,7 @@ const listarMensagensChat = async (req, res) => {
 const enviarMensagemChat = async (req, res) => {
     try {
         const id = chatId(req)
-        const usuario = idUsuario(req)
+        const usuario = idUsuarioAutenticado(req)
         const [pergunta] = validarMensagens([{ role: 'user', content: req.body?.pergunta ?? req.body?.conteudo }])
         const uuid = req.body?.requisicao_id === undefined ? randomUUID() : validarRequisicaoId(req.body.requisicao_id)
         res.set({ 'X-Requisicao-Id': uuid })
@@ -33,13 +28,13 @@ const enviarMensagemChat = async (req, res) => {
 }
 const consultarRequisicao = async (req, res) => {
     try {
-        const conteudo = await service.consultar(idUsuario(req), validarRequisicaoId(req.params.requisicaoId))
+        const conteudo = await service.consultar(idUsuarioAutenticado(req), validarRequisicaoId(req.params.requisicaoId))
         return res.json({ sucesso: true, mensagem: 'Solicitação consultada com sucesso.', conteudo })
     } catch (error) { return responderErro(res, error) }
 }
 const cancelarRequisicao = async (req, res) => {
     try {
-        const conteudo = await service.cancelar(idUsuario(req), validarRequisicaoId(req.params.requisicaoId))
+        const conteudo = await service.cancelar(idUsuarioAutenticado(req), validarRequisicaoId(req.params.requisicaoId))
         return res.json({ sucesso: true, mensagem: 'Estado da solicitação confirmado.', conteudo })
     } catch (error) { return responderErro(res, error) }
 }

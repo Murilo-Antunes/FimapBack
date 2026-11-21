@@ -26,6 +26,19 @@ const criarConexao = async (conexao) => {
 
         return result?.[0]?.insertId || false
     } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            const conexaoExistente = await knexConex('tbl_conexao_open_finance')
+                .select('id')
+                .where({
+                    provedor: conexao.provedor ?? null,
+                    external_connection_id: conexao.external_connection_id ?? null,
+                    id_usuario: conexao.id_usuario
+                })
+                .first()
+
+            if (conexaoExistente) return conexaoExistente.id
+        }
+
         console.error('Erro ao criar conexão Open Finance:', error)
         return false
     }
@@ -54,6 +67,13 @@ const listarConexoesPorUsuario = async (idUsuario) => {
         return []
     }
 }
+
+const listarConexoesAtivasPorUsuario = (idUsuario, limite) => knexConex('tbl_conexao_open_finance')
+    .select('external_connection_id')
+    .where({ id_usuario: idUsuario, status: 1, provedor: 'pluggy' })
+    .whereNotNull('external_connection_id')
+    .orderBy('id')
+    .limit(limite)
 
 // Buscar conexão por ID
 const buscarConexaoPorId = async (id) => {
@@ -134,6 +154,7 @@ const DeleteConexao = async (conexao) => {
 module.exports = {
     criarConexao,
     listarConexoesPorUsuario,
+    listarConexoesAtivasPorUsuario,
     buscarConexaoPorId,
     listarTodasConexoesAtivas,
     atualizarPercentualCdiManual,

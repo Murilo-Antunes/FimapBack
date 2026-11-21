@@ -17,6 +17,7 @@ Copie os nomes de configuração de `.env.example` para o ambiente privado:
 - `JWT_EXPIRATION`: duração do JWT de acesso, com padrão de 1 hora (`1h`).
 - `CLOUDFLARE_WORKER_URL`: URL completa privada, recomendada `https://ia-fimap.fimap-agency.workers.dev/v1/ia/chat`.
 - `CLOUDFLARE_CHAT_TOKEN`: mesmo valor de `CHAT_API_TOKEN` do Worker; não é o JWT do usuário.
+- `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION`: mantenha vazio até o Worker privado aceitar a versão 1. Em homologação, configure `1` somente com um Worker que implemente o contrato abaixo.
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`: acesso ao MySQL.
 - `PORT`: porta do servidor, padrão 8080.
 
@@ -92,8 +93,9 @@ Envio:
 }
 ```
 
-A pergunta, normalizada com `trim`, tem de 1 a 2.000 caracteres JavaScript. O backend não usa `messages`
-recebidas do navegador neste fluxo. Envia ao Worker apenas até cinco pares anteriores completos e a pergunta atual.
+A pergunta, normalizada com `trim`, tem de 1 a 2.000 caracteres JavaScript. O backend aceita no histórico da IA
+até cinco pares anteriores completos e a pergunta atual. `messages`, contexto financeiro e IDs de recursos
+enviados pelo navegador não são utilizados para selecionar dados.
 Respostas anteriores têm no máximo 16.000 caracteres; contexto legado inválido é rejeitado, sem truncar números.
 O histórico legado é preservado: pergunta órfã é descartada do contexto, mas continua visível no histórico.
 Novas perguntas com falha ficam na solicitação durável, sem criar mensagens órfãs em `tbl_mensagem`.
@@ -252,10 +254,9 @@ Se o Worker não distinguir uma causa (por exemplo, evento genérico `erro`), es
 
 ## Dependências separadas do Worker IA-Fimap
 
-Referências verificadas: [src/index.ts](https://github.com/pedrorodriguesdev/IA-Fimap/blob/main/src/index.ts)
-(blob `2b7f99a3bb5287ba878d5a686de1cd69f13148ae`) e
-[docs/backend-integration.md](https://github.com/pedrorodriguesdev/IA-Fimap/blob/main/docs/backend-integration.md)
-(blob `29866b178883d0497a63d461f66cec67e42f276a`). Nenhum arquivo desse repositório foi alterado.
+O checkout local da IA-Fimap declara `src/worker.ts` como ponto de entrada em `wrangler.jsonc`.
+O arquivo delega `POST /v1/ia/chat` ao handler em `src/api.ts`. Esse handler valida o Bearer privado
+e lê `messages`. O contrato atual do repositório está descrito em `docs/backend-integration.md` da IA-Fimap.
 
 O Worker atualmente limita por IP: 5 segundos entre pedidos e 12/60s via binding Cloudflare.
 Vários usuários deste backend podem compartilhar um IP de saída, portanto limites do backend **não resolvem**
@@ -272,19 +273,89 @@ a contenção no Worker. Antes de uso compartilhado em escala, o Worker precisa:
 - Propagar códigos/Retry-After específicos também em erros de SSE, e revisar cancelamento/prazo global
   das etapas de planejamento, ferramentas e modelo.
 
-## Limite do contexto financeiro e proposta futura
+## Contexto financeiro v1
 
-Este fluxo fornece somente mensagens. Não consulta automaticamente saldos, extratos nem Open Finance.
-Não afirme na UI que a IA analisou dados bancários não enviados. O backend não acrescenta `contextoFinanceiro`
-ou campos extras presumindo que o Worker saiba interpretá-los.
+Com a versão habilitada, `POST /v1/ia/chat/mensagens` seleciona os módulos com base na pergunta e nas
+perguntas recentes da conversa. Um acompanhamento como “E no mês passado?” herda o assunto e troca o período.
+Perguntas gerais podem seguir sem coleta. O período padrão é o mês civil atual de São Paulo. Também são
+reconhecidos mês anterior, mês seguinte, nomes de mês, `AAAA-MM`, ano atual/anterior, hoje, ontem, semana
+atual/anterior, janelas de dias e meses e intervalos `AAAA-MM-DD a AAAA-MM-DD` de até 366 dias.
 
-Uma entrega separada deve definir contrato versionado: carregar contas/consentimentos autorizados no backend,
-selecionar período e campos necessários, produzir resumo agregado mínimo (sem número completo de conta,
-credenciais ou extrato integral), limitar tamanho antes do envio e registrar consentimento/retenção.
-Uma proposta inicial de teto seria 4.000 caracteres para esse resumo, independente dos limites das mensagens,
-**apenas após** definição e suporte explícito pelo Worker. Definir schema, tratamento de dados ausentes,
-expiração, redação de dados pessoais e instruções que impeçam alegações de análise de fontes ausentes.
-Nenhuma dessas extensões é enviada ao Worker atual.
+A identidade vem do `sub` do JWT. O backend lista somente as metas e as conexões Pluggy ativas do titular.
+Antes de ler produtos, confirma o `clientUserId` do item no Pluggy e verifica a validade do consentimento
+quando há um vencimento informado. Conexões sem titularidade confirmada ficam fora da coleta. Cartões vêm
+da lista do item e o serviço de extrato valida que cada cartão pertence à conexão. Empréstimos e parcelas
+são lidos da lista de contratos do item verificado. Metas podem ser selecionadas pelo nome entre as metas
+do titular. Os nomes ficam no backend e as metas são identificadas por ordem no contexto.
+
+| Módulo | Regra aplicada |
+| --- | --- |
+| `patrimonio` | Soma dos saldos bancários e investimentos menos dívida e fatura aberta, conforme o painel. A posição é atual. O líquido fica `null` com componentes incompletos. |
+| `movimentacao` | Receitas e despesas por sinal da transação, com o mesmo recorte de datas do painel. Inclui um subtotal restrito a contas bancárias. |
+| `contas` | Saldos de contas `BANK` e, quando pedidas, movimentações bancárias no período. |
+| `cartoes`, `faturas` | Limites e fatura aberta atuais, faturas do período pelo mês do vencimento e compras líquidas de estornos segundo o extrato do site. Pagamentos da fatura ficam fora do total de compras. |
+| `investimentos` | Valor da carteira atual por tipo e moeda. Data da posição de cada item quando informada. |
+| `metas` | Acumulado, objetivo, aporte, data-alvo e progresso arredondado com teto de 100%, como no site. |
+| `emprestimos` | Saldo devedor atual e cronograma do site recortado pelo período. Separa parcelas pagas, pendentes estimadas e amortizações extraordinárias. |
+| `comprometimento` | Soma do valor das faturas e das parcelas regulares no período, dividida pelas entradas em contas bancárias. Amortizações extraordinárias são informadas à parte. O percentual fica `null` se a receita não é positiva ou falta cobertura de uma fonte. |
+
+Os agregados somam as instituições autorizadas por moeda, sem conversão cambial. A posição atual de um
+saldo ou carteira não equivale a um saldo histórico no fim do período. O campo `referencia` diferencia
+`posicao_atual`, `periodo` e `posicao_atual_e_periodo`. `atualizadoEm` usa a data confirmada mais antiga
+entre as fontes disponíveis para o módulo e pode ser `null`. `consultadoEm` indica o horário da coleta.
+
+Cada módulo usa `ok`, `sem_dados`, `parcial` ou `indisponivel`. Zero é um valor medido, `dados: null`
+representa a falta de um resultado, e `parcial` informa cobertura incompleta. O campo `conexoes` distingue
+`sem_conexao`, `cadastradas`, `indisponiveis` e `nao_consultadas`. A falta de conexão bancária preserva
+o chat e qualquer consulta às metas. O prazo da coleta é de 8 segundos. Respostas parciais continuam no
+fluxo do chat. O cancelamento interrompe o fluxo e libera o chat enquanto chamadas em andamento no provedor terminam.
+
+A projeção usa campos enumerados por módulo e limita o contexto a 12.000 bytes UTF-8. Há até 12 conexões
+por pergunta, 6 cartões por conexão, 6 meses de faturas por cartão e 8 itens de detalhe por módulo.
+Ao atingir o limite de bytes, o backend sinaliza o truncamento e elimina detalhes primeiro. Se necessário,
+limita a lista de moedas, priorizando BRL, e informa os módulos que precisou omitir.
+Identificadores de contas, conexões, contratos e consentimentos, números de cartões, descrições de
+transações, credenciais e tokens ficam fora do contexto e dos logs da coleta. O objeto estruturado não é
+persistido no histórico. A resposta da IA segue o fluxo normal de gravação de mensagens.
+
+### Contrato proposto para a rota privada do Worker
+
+O campo `contextoFinanceiro` é opcional e separado de `messages`. Exemplo de mensagem do backend ao
+Worker configurado em `https://…/v1/ia/chat`, com o Bearer compartilhado já usado pelo chat:
+
+```json
+{
+  "messages": [{ "role": "user", "content": "Quanto recebi neste mês?" }],
+  "contextoFinanceiro": {
+    "versao": 1,
+    "consultadoEm": "2026-11-21T15:00:00.000Z",
+    "periodo": { "inicio": "2026-11-01", "fimExclusivo": "2026-12-01", "fuso": "America/Sao_Paulo" },
+    "moeda": "BRL",
+    "conexoes": "cadastradas",
+    "modulos": {
+      "movimentacao": {
+        "estado": "ok", "fonte": "open_finance", "referencia": "periodo",
+        "atualizadoEm": "2026-11-20T10:00:00.000Z",
+        "dados": { "porMoeda": [{ "moeda": "BRL", "quantidade": 2, "receitas": 1500, "despesas": 100 }] }
+      }
+    }
+  }
+}
+```
+
+Em `IA-Fimap/src/api.ts`, ampliar o parser em torno de `JSON.parse(raw)` para validar o campo opcional
+depois da autenticação, somente para `privateRoute`. Validar a versão, o tamanho em bytes, as datas,
+os estados, as chaves por módulo e seus tipos. Manter o fluxo de `messages` e rejeitar contexto em
+`/v1/ia/chat-publico` e `/chat`. No mesmo handler, fornecer o conteúdo validado como dados da aplicação
+apenas à inferência final em `env.AI.run`, após `prepareFinancialMessages`. O prompt deve usar valores
+parciais com a limitação explícita, respeitar o período e a moeda, tratar dados como dados e abster-se de
+preencher valores ausentes. Manter o contexto fora do planejamento de ferramentas, de pesquisas externas
+e dos logs. Ajustar também a orientação sobre Open Finance em `src/services/financial/financialChatOrchestrator.js`
+se ela for reutilizada na inferência final. O Worker deve preservar os eventos SSE e o cancelamento.
+
+O backend envia contexto somente com `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION=1`, Bearer configurado e URL
+HTTPS com caminho exato `/v1/ia/chat`. Sem suporte confirmado no Worker, deixe a versão vazia. Nesse modo
+o backend pula a coleta financeira e continua enviando apenas `messages`.
 
 ## Testes e limites da validação
 
@@ -294,12 +365,16 @@ conflitos, commit/rollback do par, recuperação sem `fim`, lease abandonado, ca
 limites por usuário, SSE fragmentado/UTF-8, backpressure e limpeza de recursos.
 Não consome inferência real nem usa dados financeiros reais.
 
+`node --test tests/financial-context.test.js` usa a rota real, SQL isolado, fontes simuladas e um Worker
+simulado. Cobre identidade do JWT, titularidade do item, múltiplas instituições, patrimônio por moeda,
+receitas cruzadas com faturas e parcelas, troca de mês pelo histórico, fonte parcial, usuário sem banco,
+replay, cancelamento durante a coleta e bloqueio do campo fora da rota compatível.
+
 `tests/chat-mysql.test.js` é opt-in: configure `CHAT_TEST_MYSQL_URL` **somente para servidor de testes**
 com permissão para criar/apagar schemas descartáveis. Ele cria `fimap_chat_test_<uuid>`, aplica a migração,
 usa dois pools concorrentes, confere constraints/locks, rollback com falha na segunda mensagem e fencing.
 Remove somente o schema que criou. A URL nunca é impressa. Execute `npm test` com essa variável no ambiente privado.
 
-Resultado desta entrega: 33 testes passaram; um teste MySQL foi omitido por falta de servidor descartável.
 SQLite não prova comportamento de locks InnoDB, compatibilidade da migração no banco existente ou latência de produção.
 Antes de publicar: executar o teste MySQL, validar a migração em cópia do banco e testar proxy/frontend/Worker em homologação.
 Não houve deploy, push ou execução de migração no banco existente.
