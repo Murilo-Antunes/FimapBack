@@ -17,18 +17,20 @@ router.post("/alterar/verificar-senha-atual/:id_usuario", usuarioController.veri
 router.patch("/usuario-update/:id_usuario", usuarioController.atualizarUsuario)
 router.patch("/alterar/senha-atual/:id_usuario", usuarioController.alterarSenhaComSenhaAtual)
 
-// Perfil social (NOVAS)
+// Perfil social
 router.get("/social/username-disponivel/:username_social", usuarioController.verificarUsernameSocial)
 router.post("/foto-perfil/:id_usuario", uploadFotoPerfil, usuarioController.enviarFotoPerfil)
 router.delete("/foto-perfil/:id_usuario", usuarioController.removerFotoPerfil)
 
 // Buscar usuários
-router.get("/usuario/:username", usuarioController.buscarUsuarioPorUsername)
+// ⚠️ VOLTOU: essa é a rota que o PublicProfileView.vue usa pra carregar o
+// perfil público de outro usuário, buscando por username_social.
+router.get("/usuario/social/:username_social", usuarioController.buscarUsuarioPorUsernameSocial)
 router.get("/usuario/id/:id_usuario", usuarioController.buscarUsuarioPorId)
 router.get("/usuario/email/:email", usuarioController.buscarUsuarioPorEmail)
 router.get("/usuarios", usuarioController.buscarTodosUsuarios)
 router.get("/otp/codigos", usuarioController.buscarTodosCodigos)
-router.get("/todos/dispositivos", dispositivoController.buscarTodosDispositivos)   // faltava a "/" inicial
+router.get("/todos/dispositivos", dispositivoController.buscarTodosDispositivos)
 
 // Deletar usuário
 router.delete("/usuario-delete/:id_usuario", usuarioController.deletarUsuario)

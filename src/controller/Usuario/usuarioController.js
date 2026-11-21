@@ -575,6 +575,28 @@ const buscarUsuarioPorUsername = async (req, res) => {
     }
 }
 
+const buscarUsuarioPorUsernameSocial = async (req, res) => {
+    try {
+        const username_social = typeof req.params?.username === 'string' ? req.params.username.trim() : ''
+
+        if (!username_social) {
+            return responderErro(res, config_message.USERNAME_INVALIDO || config_message.ERRO_INTERNO)
+        }
+
+        const usuario = await usuarioModel.BuscarUsuarioPorUsernameSocial(username_social)
+
+        if (!usuario) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        return responderSucesso(res, config_message.USUARIO_ENCONTRADO || config_message.ERRO_INTERNO, { usuario })
+
+    } catch (error) {
+        console.error('Erro ao buscar usuário por username:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_USUARIO || config_message.ERRO_INTERNO)
+    }
+}
+
 // Buscar todos os usuários
 const buscarTodosUsuarios = async (req, res) => {
     try {
@@ -893,5 +915,6 @@ module.exports = {
     buscarUsuarioPorEmail,
     login,
     validarCodigoOTP,
-    buscarTodosCodigos
+    buscarTodosCodigos,
+    buscarUsuarioPorUsernameSocial
 }

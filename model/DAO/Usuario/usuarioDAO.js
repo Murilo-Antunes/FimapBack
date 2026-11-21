@@ -139,6 +139,16 @@ const GetAllUsers = async () => {
     }
 }
 
+async function BuscarUsuarioPorUsernameSocial(username_social) {
+    const usuario = await knexConex('vw_perfil_usuario')
+        .select('*')
+        .where({ username_social })
+        .first()
+
+    return usuario ?? null
+}
+
+
 // Verificar se email, CPF ou username já existem
 const ValidarUser = async (usuario) => {
     const condicoes = []
@@ -220,5 +230,6 @@ module.exports = {
     GetUsuarioByUsername,
     GetAllUsers,
     ValidarUser,
-    ValidarSenha
+    ValidarSenha,
+    BuscarUsuarioPorUsernameSocial
 }
