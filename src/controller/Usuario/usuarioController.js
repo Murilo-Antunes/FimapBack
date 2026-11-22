@@ -577,7 +577,7 @@ const buscarUsuarioPorUsername = async (req, res) => {
 
 const buscarUsuarioPorUsernameSocial = async (req, res) => {
     try {
-        const username_social = typeof req.params?.username === 'string' ? req.params.username.trim() : ''
+        const username_social = typeof req.params?.username_social === 'string' ? req.params.username_social.trim() : ''
 
         if (!username_social) {
             return responderErro(res, config_message.USERNAME_INVALIDO || config_message.ERRO_INTERNO)
@@ -589,7 +589,11 @@ const buscarUsuarioPorUsernameSocial = async (req, res) => {
             return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
         }
 
-        return responderSucesso(res, config_message.USUARIO_ENCONTRADO || config_message.ERRO_INTERNO, { usuario })
+        return res.status(config_message.USUARIO_ENCONTRADO.status).json({
+            sucesso: true,
+            mensagem: config_message.USUARIO_ENCONTRADO.mensagem,
+            usuario: semSenha(usuario)
+        })
 
     } catch (error) {
         console.error('Erro ao buscar usuário por username:', error)

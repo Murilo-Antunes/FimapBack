@@ -78,7 +78,7 @@ const getSeguindoByUsuarioId = async (id_usuario) => {
     }
 }
 
-async function ExisteRelacao(id_seguidor, id_seguindo) {
+async function verificarSegue(id_seguidor, id_seguindo) {
     try{
         const relacao = await knexConex('tbl_seguidores')
             .select('id')
@@ -98,6 +98,6 @@ module.exports = {
     deleteSeguir,
     getSeguidoresByUsuarioId,
     getSeguindoByUsuarioId,
-    ExisteRelacao
+    verificarSegue
 
 }
