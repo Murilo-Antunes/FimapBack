@@ -64,7 +64,7 @@ test('MySQL/InnoDB: migração, duas conexões, constraints, fencing e rollback 
         const pedidoAcao = (await a.reservar({ ...pedido, requisicao_id: randomUUID() })).requisicao
         await a.concluir(pedidoAcao, 'Proposta', [{ valores, cartao, hoje: '2026-11-23', origens: {}, premissas: {} }])
         const acoes = require('../model/DAO/MensagemChat/AcaoChatDAO.js')
-        await db.raw("CREATE TRIGGER falhar_confirmacao BEFORE UPDATE ON tbl_chat_acao FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'falha controlada'")
+        await db.raw("CREATE TRIGGER falhar_confirmacao BEFORE UPDATE ON tbl_chat_acao_v2 FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'falha controlada'")
         await assert.rejects(acoes.confirmar(3, 7, acao, 1, db))
         assert.equal((await db('tbl_simulacao_investimento')).length, 0)
         await db.raw('DROP TRIGGER falhar_confirmacao')

@@ -13,9 +13,9 @@ const database = () => {
             requisicao_id TEXT, hash_pedido TEXT, pergunta TEXT, estado TEXT, chat_ativo INTEGER UNIQUE,
             dono_lease TEXT, lease_ate_ms INTEGER, criada_ms INTEGER, id_mensagem_usuario INTEGER, id_mensagem_assistente INTEGER,
             codigo_erro TEXT, status_erro INTEGER, retry_after TEXT, UNIQUE(id_usuario,requisicao_id));
-        CREATE TABLE tbl_chat_acao(id TEXT PRIMARY KEY, id_chat INTEGER REFERENCES tbl_chat(id) ON DELETE CASCADE,
+        CREATE TABLE tbl_chat_acao_v2(id TEXT PRIMARY KEY, id_chat INTEGER REFERENCES tbl_chat(id) ON DELETE CASCADE,
             tipo TEXT, versao INTEGER, id_registro INTEGER, UNIQUE(tipo,id_registro));
-        CREATE TABLE tbl_chat_acao_versao(id_acao TEXT REFERENCES tbl_chat_acao(id) ON DELETE CASCADE,
+        CREATE TABLE tbl_chat_acao_v2_versao(id_acao TEXT REFERENCES tbl_chat_acao_v2(id) ON DELETE CASCADE,
             versao INTEGER, id_mensagem INTEGER REFERENCES tbl_mensagem(id) ON DELETE CASCADE,
             payload TEXT, PRIMARY KEY(id_acao,versao));
         INSERT INTO tbl_usuario VALUES(3),(4);

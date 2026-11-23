@@ -6,8 +6,7 @@ const amortizacao = require('../Simulacoes/SimulacaoAmortizacaoDAO.js')
 const { checarDados } = require('../../../src/services/planningCatalog.js')
 const { criarErro, validarId } = require('../../../src/services/chatValidation.js')
 
-const acoes = 'tbl_chat_acao'
-const versoes = 'tbl_chat_acao_versao'
+const { acoes, versoes } = require('../../../db/chatActionSchema.js')
 const lerPayload = (payload) => typeof payload === 'string' ? JSON.parse(payload) : payload
 const inexistente = () => criarErro(404, 'Ação não encontrada nesta conversa.', 'ACAO_NAO_ENCONTRADA')
 const incompleta = () => criarErro(422, 'Revise os dados da proposta antes de salvar.', 'ACAO_INCOMPLETA')

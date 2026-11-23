@@ -49,7 +49,9 @@ async function planejar({ usuario, mensagens, carregarRascunhos, buscarFinanceir
         const interpretacao = await interpretar(config, completo.payload, sinal)
         if (interpretacao.intencao !== 'planejamento') return falha
         const textos = [...mensagens].reverse().filter(({ role }) => role === 'user').map(({ content }) => normalizarTexto(content))
-        return produzir(interpretacao, completo.referencias, { hoje, categorias, financeiro, atual, textos })
+        return produzir(interpretacao, completo.referencias, {
+            hoje, categorias: completo.payload.categorias, financeiro, atual, textos
+        })
     } catch {
         sinal.throwIfAborted()
         if (classificado || (rascunhos.length && /^(?:sim|ok|pode ser|mude|altere|troque|ajuste)/.test(atual))) return falha

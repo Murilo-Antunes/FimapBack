@@ -59,6 +59,12 @@ test('contrato v2 corta históricos em UTF-8, usa aliases opacos e oculta identi
     assert.equal(referencias.get(payload.rascunhos[0].referencia), rascunho)
     assert.equal('saldo_devedor' in payload.rascunhos[0].dados, false)
     assert.doesNotMatch(payload.mensagem, /1234567|111\.222/)
+    const meta = { cartao: { id: randomUUID(), tipo: 'meta', versao: 2 },
+        valores: { nome: 'Comprar carro', categoria: 'Veículos', aporte_mensal: 1000 }, origens: { categoria: 'ia' } }
+    const cortado = prepararPayload(mensagens, hoje, [meta], [...payload.categorias, 'Veículos'], null).payload
+    assert.equal(Object.hasOwn(cortado.rascunhos[0].dados, 'categoria'), false)
+    assert.equal(cortado.rascunhos[0].sugeridos.includes('categoria'), false)
+    assert.equal(meta.valores.categoria, 'Veículos')
 })
 
 test('prazo ambíguo, preço sem evidência e falta de cobertura geram perguntas; zero comprovado permanece', () => {
@@ -102,6 +108,19 @@ test('interpretações de objetivos distintos produzem rascunhos sem introduzir 
         assert.deepEqual(cartao.dados, {})
         assert.match(plano.texto, /Qual é o custo estimado/)
     }
+})
+
+test('proposta sem nome permanece rascunho e pede o nome do plano', () => {
+    const entrada = 'Custa R$ 60 mil, separei R$ 8 mil e quero até novembro de 2027.'
+    const item = proposta('meta', { valor_desejado: 60000, valor_inicio: 8000, categoria: 'Veículos' })
+    item.campos.categoria.origem = 'ia'
+    const plano = produzir(resposta(item), new Map(), { hoje, categorias: ['Veículos'],
+        atual: entrada, textos: [entrada], financeiro: financeiroExemplo })
+    const [cartao] = plano.propostas.map((p) => p.cartao)
+    assert.equal(cartao.status, 'rascunho')
+    assert.equal(Object.hasOwn(cartao, 'nome'), false)
+    assert.equal(Object.hasOwn(cartao, 'id_registro'), false)
+    assert.ok(cartao.pendencias.some((pergunta) => pergunta.includes('Qual nome')))
 })
 
 test('coleta planejada seleciona conta autorizada, concilia despesas e distingue fonte vazia de fonte indisponível', async (t) => {
@@ -296,6 +315,26 @@ test('HTTP v2 monta, revisa, confirma e reabre cartões com Worker simulado e ba
     assert.equal((await confirmar(meta1, { chat: 9 })).status, 404)
     assert.equal((await confirmar(meta1, { body: { versao: 1, id_usuario: 4 } })).status, 400)
 
+    gerar = ({ rascunhos, categorias }) => {
+        const rascunho = rascunhos.find((x) => x.tipo === 'meta')
+        assert.equal(rascunho.dados.nome, 'Comprar carro')
+        if (categorias.length === 0) {
+            assert.equal(Object.hasOwn(rascunho.dados, 'categoria'), false)
+            assert.equal(rascunho.sugeridos.includes('categoria'), false)
+            return resposta()
+        }
+        assert.ok(categorias.includes('Veículos'))
+        assert.equal(rascunho.dados.categoria, 'Veículos')
+        assert.ok(rascunho.sugeridos.includes('categoria'))
+        return resposta(proposta('meta', { aporte_mensal: 1500 }, rascunho.referencia))
+    }
+    const ajuste = await enviar('Mude o aporte mensal para R$ 1.500')
+    const [meta2] = ajuste.acoes_financeiras
+    assert.equal(meta2.id, meta1.id)
+    assert.equal(meta2.versao, 2)
+    assert.equal(meta2.dados.categoria, 'Veículos')
+    assert.equal(meta2.dados.aporte_mensal, 1500)
+
     gerar = ({ rascunhos, categorias }) => categorias.length ? resposta(proposta('meta', {
         aporte_mensal: 10000, data_alvo: '2027-12-31'
     }, rascunhos.find((x) => x.tipo === 'meta').referencia)) : resposta()
@@ -304,7 +343,7 @@ test('HTTP v2 monta, revisa, confirma e reabre cartões com Worker simulado e ba
     const revisao = await enviar('Altere o aporte para R$ 10.000/mês e a data para o fim de dezembro de 2027.')
     const [meta3, investimento3] = revisao.acoes_financeiras
     assert.equal(meta3.id, meta1.id)
-    assert.equal(meta3.versao, 2)
+    assert.equal(meta3.versao, 3)
     assert.equal(meta3.dados.aporte_mensal, 10000)
     assert.equal(meta3.dados.prazo, 13)
     assert.match(revisao.mensagem_assistente.conteudo, /Cenário hipotético/)
@@ -326,7 +365,7 @@ test('HTTP v2 monta, revisa, confirma e reabre cartões com Worker simulado e ba
     const historico = await (await http('/listar-chat/7/mensagens/3', { method: 'GET' })).json()
     assert.deepEqual(historico.conteudo.filter((m) => m.acoes_financeiras)
         .map((m) => m.acoes_financeiras.map((a) => [a.versao, a.status])), [
-        [[1, 'pronta'], [1, 'pronta']], [[2, 'salva'], [2, 'salva']]
+        [[1, 'pronta'], [1, 'pronta']], [[2, 'pronta'], [2, 'pronta']], [[3, 'salva'], [3, 'salva']]
     ])
 
     gerar = ({ categorias }) => categorias.length ? resposta(proposta('amortizacao', {
@@ -364,8 +403,56 @@ test('HTTP v2 monta, revisa, confirma e reabre cartões com Worker simulado e ba
     assert.equal(comum.mensagem_assistente.conteudo, 'Resposta comum.')
     assert.equal('acoes_financeiras' in comum, false)
     assert.equal(consultar.mock.callCount(), totalConsultas)
+
+    sqlite.exec("INSERT INTO tbl_chat VALUES (11,'Outra meta','2026-11-23',3); INSERT INTO tbl_categoria_meta VALUES (5,'Temporária',3);")
+    gerar = ({ categorias }) => {
+        if (!categorias.length) return resposta()
+        const item = proposta('meta', { ...meta, categoria: 'Temporária', aporte_mensal: 1000 })
+        item.campos.categoria.origem = 'ia'
+        return resposta(item)
+    }
+    state.now += 60000
+    const primeiraTemporaria = await enviar(pergunta + ' Posso aportar R$ 1.000 por mês.', 11)
+    const [temporaria] = primeiraTemporaria.acoes_financeiras
+    assert.equal(temporaria.status, 'pronta')
+    sqlite.exec('DELETE FROM tbl_categoria_meta WHERE id = 5')
+    assert.equal((await confirmar(temporaria, { chat: 11 })).status, 422)
+    gerar = ({ categorias, rascunhos }) => {
+        const rascunho = rascunhos.find((x) => x.tipo === 'meta')
+        assert.equal(categorias.includes('Temporária'), false)
+        assert.equal(Object.hasOwn(rascunho.dados, 'categoria'), false)
+        assert.equal(rascunho.sugeridos.includes('categoria'), false)
+        if (!categorias.length) return resposta()
+        const item = proposta('meta', { aporte_mensal: 1500, categoria: 'Viagem' }, rascunho.referencia)
+        item.campos.categoria.origem = 'ia'
+        return resposta(item)
+    }
+    const semCategoria = await enviar('Mude o aporte mensal para R$ 1.500', 11)
+    const [pendente] = semCategoria.acoes_financeiras
+    assert.equal(pendente.id, temporaria.id)
+    assert.equal(pendente.versao, 2)
+    assert.equal(pendente.status, 'rascunho')
+    assert.equal(pendente.dados.aporte_mensal, 1500)
+    assert.ok(pendente.pendencias.some((pergunta) => pergunta.includes('categoria')))
+    assert.equal(Object.hasOwn(pendente.dados, 'categoria'), false)
+    assert.equal((await confirmar(pendente, { chat: 11 })).status, 422)
+
+    process.env.CLOUDFLARE_PLANNING_VERSION = ''
+    const historicoSemFlag = await (await http('/listar-chat/11/mensagens/3', { method: 'GET' })).json()
+    assert.equal(historicoSemFlag.conteudo.find((m) => m.acoes_financeiras).acoes_financeiras[0].dados.categoria, 'Temporária')
+    assert.equal(historicoSemFlag.conteudo.at(-1).acoes_financeiras[0].status, 'rascunho')
+    process.env.CLOUDFLARE_PLANNING_VERSION = '2'
+    gerar = ({ categorias, rascunhos }) => categorias.length ? resposta(proposta('meta',
+        { categoria: 'Veículos' }, rascunhos.find((x) => x.tipo === 'meta').referencia)) : resposta()
+    const comCategoria = await enviar('Use a categoria Veículos.', 11)
+    const [comRecuperacao] = comCategoria.acoes_financeiras
+    assert.equal(comRecuperacao.id, temporaria.id)
+    assert.equal(comRecuperacao.versao, 3)
+    assert.equal(comRecuperacao.status, 'pronta')
+    assert.equal(comRecuperacao.dados.categoria, 'Veículos')
+    assert.equal((await confirmar(comRecuperacao, { chat: 11 })).status, 200)
     assert.equal((await http('/apagar-chat/7', { method: 'DELETE' })).status, 200)
-    assert.equal(sqlite.prepare('SELECT count(*) AS total FROM tbl_chat_acao WHERE id_chat = 7').get().total, 0)
-    assert.equal(consulta('tbl_meta_financeira').length, 1)
+    assert.equal(sqlite.prepare('SELECT count(*) AS total FROM tbl_chat_acao_v2 WHERE id_chat = 7').get().total, 0)
+    assert.equal(consulta('tbl_meta_financeira').length, 2)
     assert.equal(consulta('tbl_simulacao_investimento').length, 1)
 })

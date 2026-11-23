@@ -77,10 +77,12 @@ function validarProposta(proposta, referencias, categorias) {
 }
 
 function podeUsar(tipo, campo, dado, estado) {
-    const { hoje, atual, textos, capacidade, anterior } = estado
+    const { hoje, atual, textos, capacidade, anterior, categorias } = estado
     const { valor, origem } = dado
     const antes = anterior?.valores[campo]
     if (antes === valor) return false
+    if (campo === 'categoria' && antes !== undefined && !categorias.includes(antes))
+        return origem === 'usuario' && evidencia(campo, valor, atual, hoje)
     if (antes !== undefined && (comparacao(atual) || !alteracao(atual) || !evidencia(campo, valor, atual, hoje))) return false
     if (campo === 'nome' || campo === 'descricao') return true
     if (origem === 'usuario') return (anterior ? [atual] : textos)
@@ -92,7 +94,7 @@ function podeUsar(tipo, campo, dado, estado) {
 
 function montar(proposta, anterior, parametros) {
     const { tipo } = proposta
-    const { hoje, atual, textos, financeiro } = parametros
+    const { hoje, atual, textos, financeiro, categorias } = parametros
     const capacidade = financeiro.contexto?.capacidade_aporte_mensal
     const valores = { ...anterior?.valores }
     const origens = { ...anterior?.origens }
@@ -106,7 +108,7 @@ function montar(proposta, anterior, parametros) {
         if (premissa) premissas[campo] = premissa
     }
     for (const [campo, dado] of Object.entries(proposta.campos)) {
-        if (podeUsar(tipo, campo, dado, { hoje, atual, textos, capacidade, anterior }))
+        if (podeUsar(tipo, campo, dado, { hoje, atual, textos, capacidade, anterior, categorias }))
             definir(campo, dado.valor, dado.origem, dado.premissa)
     }
     const anteriorAmbiguo = Boolean(anterior?.dataAmbigua)
@@ -172,6 +174,7 @@ function cartao(rascunho, parametros) {
     if (tipo === 'meta') {
         if (prazo && !dataAmbigua) dados.prazo = prazo
         if (dataAmbigua) delete dados.data_alvo
+        if (!categorias.includes(dados.categoria)) delete dados.categoria
     }
     const dadosFinanceiros = tipo === 'amortizacao' ? [] : [
         ...(financeiro.metodo ? [financeiro.metodo] : []),

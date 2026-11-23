@@ -18,19 +18,21 @@ function ocultarIdentificadores(texto) {
 
 function prepararPayload(mensagens, hoje, rascunhos, categorias, contextoPlanejamento) {
     const limitarTexto = (texto, limite) => [...ocultarIdentificadores(texto)].slice(0, limite).join('')
+    const categoriasEnviadas = categorias.slice(0, 20)
     const referencias = new Map()
     const resumo = rascunhos.slice(0, 3).map((rascunho) => {
         const referencia = randomUUID()
         referencias.set(referencia, rascunho)
         const dados = Object.fromEntries(Object.entries(rascunho.valores)
-            .filter(([campo]) => rascunho.origens[campo] !== 'contrato')
+            .filter(([campo, valor]) => rascunho.origens[campo] !== 'contrato' &&
+                (campo !== 'categoria' || categoriasEnviadas.includes(valor)))
             .map(([campo, valor]) => [campo, typeof valor === 'string' ? limitarTexto(valor, 500) : valor]))
         return { referencia, tipo: rascunho.cartao.tipo, dados,
             sugeridos: Object.keys(dados).filter((campo) => rascunho.origens[campo] === 'ia') }
     })
     const payload = { versao: 2, mensagem: limitarTexto(mensagens.at(-1).content, 2000), hoje,
         historico: mensagens.slice(-9, -1).map(({ role, content }) => ({ role, content: limitarTexto(content, 1200) })),
-        rascunhos: resumo, categorias: categorias.slice(0, 20), contextoPlanejamento }
+        rascunhos: resumo, categorias: categoriasEnviadas, contextoPlanejamento }
     const excede = () => Buffer.byteLength(JSON.stringify(payload), 'utf8') > LIMITE_PEDIDO
     while (payload.historico.length && excede()) payload.historico.shift()
     if (excede()) throw new Error('Pedido de planejamento excedeu o limite.')
