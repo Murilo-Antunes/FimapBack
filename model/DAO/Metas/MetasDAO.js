@@ -131,7 +131,7 @@ const DeleteMeta = async (meta) => {
 }
 
 // Buscar todas as metas do usuário
-const GetAllMetasUsuario = async (id_usuario) => {
+const GetAllMetasUsuario = async (id_usuario, { propagarErro = false } = {}) => {
     try {
         return await knexConex('tbl_meta_financeira')
             .select(
@@ -151,6 +151,7 @@ const GetAllMetasUsuario = async (id_usuario) => {
             .orderBy('data_alvo', 'asc')
 
     } catch (error) {
+        if (propagarErro) throw error
         console.error('Erro ao listar metas do usuário:', error)
         return false
     }

@@ -219,20 +219,20 @@ const calcularCartoes = (cartoes) => {
 }
 
 
-const somarTransacoes = (transacoes, tipo, inicio, fim) =>
-    transacoes.reduce((total, transacao) => {
+const filtrarTransacoesPorPeriodo = (transacoes, inicio, fim) =>
+    transacoes.filter((transacao) => {
         const data = obterDataBrasilia(transacao)
+        return data && data >= inicio && data < fim
+    })
 
-        if (!data || obterTipoTransacao(transacao) !== tipo) {
-            return total
-        }
-
-        if (data < inicio || data >= fim) {
-            return total
-        }
-
-        return total + obterValorAbsoluto(transacao)
-    }, 0)
+const totalizarMovimentacao = (transacoes) => {
+    const totais = { receita: 0, despesa: 0 }
+    for (const transacao of transacoes) {
+        const tipo = obterTipoTransacao(transacao)
+        if (tipo) totais[tipo] += obterValorAbsoluto(transacao)
+    }
+    return totais
+}
 
 const calcularMovimentacaoMensal = (transacoes, agora = new Date()) => {
     const agoraBrasilia = paraBrasilia(agora)
@@ -241,20 +241,11 @@ const calcularMovimentacaoMensal = (transacoes, agora = new Date()) => {
     const inicioProximo = inicioDoMes(agoraBrasilia, 1)
     const inicioAnterior = inicioDoMes(agoraBrasilia, -1)
 
-    const receitasAtual = somarTransacoes(
-        transacoes, "receita", inicioAtual, inicioProximo
+    const { receita: receitasAtual, despesa: despesasAtual } = totalizarMovimentacao(
+        filtrarTransacoesPorPeriodo(transacoes, inicioAtual, inicioProximo)
     )
-
-    const receitasAnterior = somarTransacoes(
-        transacoes, "receita", inicioAnterior, inicioAtual
-    )
-
-    const despesasAtual = somarTransacoes(
-        transacoes, "despesa", inicioAtual, inicioProximo
-    )
-
-    const despesasAnterior = somarTransacoes(
-        transacoes, "despesa", inicioAnterior, inicioAtual
+    const { receita: receitasAnterior, despesa: despesasAnterior } = totalizarMovimentacao(
+        filtrarTransacoesPorPeriodo(transacoes, inicioAnterior, inicioAtual)
     )
 
     return {
@@ -490,6 +481,13 @@ const criarResumoBancario = async (itemId, periodoSolicitado = "mes") => {
 
 module.exports = {
     criarResumoBancario,
+    calcularPatrimonio,
+    calcularCartoes,
+    calcularEmprestimos,
+    calcularInvestimentos,
+    filtrarTransacoesPorPeriodo,
+    totalizarMovimentacao,
+    obterDataBrasilia,
     // Expostos para teste
     calcularMovimentacaoMensal,
     calcularEvolucao,

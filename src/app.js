@@ -73,15 +73,12 @@ app.use('/v1/comunidade/denuncias', denunciaUsuarioRoutes)
 
 /* ----------------------------- Servidor ----------------------------- */
 
-const servidor = app.listen(PORT, (erro) => {
-    if (erro) {
+if (require.main === module) {
+    const servidor = app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`))
+    servidor.on('error', (erro) => {
         console.error('Erro ao subir o servidor:', erro)
         process.exit(1)
-    }
-    console.log(`Servidor rodando na porta ${PORT}`)
-})
+    })
+}
 
-servidor.on('error', (erro) => {
-    console.error('Erro no servidor:', erro)
-    process.exit(1)
-})
+module.exports = app

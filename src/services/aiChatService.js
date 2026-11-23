@@ -4,10 +4,10 @@
  * QUANDO FAZ DIFERENÇA: Faz diferença ao juntar os pedaços da resposta, lidar com falhas e cancelar a chamada.
  */
 
-const { criarErro, validarMensagens } = require('./chatValidation.js')
+const { criarErro, validarMensagens, VERSAO_CONTEXTO_FINANCEIRO, LIMITE_CONTEXTO_FINANCEIRO_BYTES } = require('./chatValidation.js')
 const { erroWorker } = require('./chatErrors.js')
 
-// O prompt e o modelo são administrados no Worker. O cliente envia apenas o histórico.
+// O prompt e o modelo são administrados no Worker.
 const WORKER_URL_PADRAO = 'https://back-end-fimap.pedroday813.workers.dev/v1/ia/chat-publico'
 const TIMEOUT_IA_MS = 120000
 
@@ -21,7 +21,10 @@ const obterConfiguracao = () => {
     const token = process.env.CLOUDFLARE_CHAT_TOKEN
     if (['/chat', '/v1/ia/chat'].includes(url.pathname.replace(/\/$/, '')) && !token)
         throw criarErro(503, 'Configure CLOUDFLARE_CHAT_TOKEN para usar a rota protegida /chat.', 'IA_CONFIGURACAO')
-    return { url: url.toString(), token }
+    const versaoContextoFinanceiro = url.protocol === 'https:' && url.pathname === '/v1/ia/chat' &&
+        !url.search && !url.hash && !!token && process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION === String(VERSAO_CONTEXTO_FINANCEIRO)
+        ? VERSAO_CONTEXTO_FINANCEIRO : null
+    return { url: url.toString(), token, versaoContextoFinanceiro }
 }
 const obterConfiguracaoPrivada = () => {
     const config = obterConfiguracao()
@@ -39,9 +42,14 @@ const extrairTexto = (dados) => {
 }
 
 // É o ponto central usado tanto pelo chat público quanto pelo chat com histórico.
-const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal) => {
+const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal, contextoFinanceiro) => {
     const mensagens = validarMensagens(entrada)
-    const { url, token } = obterConfiguracao()
+    const { url, token, versaoContextoFinanceiro } = obterConfiguracao()
+    const payload = { messages: mensagens }
+    if (versaoContextoFinanceiro && contextoFinanceiro?.versao === versaoContextoFinanceiro &&
+        Buffer.byteLength(JSON.stringify(contextoFinanceiro), 'utf8') <= LIMITE_CONTEXTO_FINANCEIRO_BYTES) {
+        payload.contextoFinanceiro = contextoFinanceiro
+    }
     const sinal = signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_IA_MS)]) : AbortSignal.timeout(TIMEOUT_IA_MS)
     let reader
     let cancelarLeitura
@@ -75,7 +83,7 @@ const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json',
                 ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({ messages: mensagens }),
+            body: JSON.stringify(payload),
             redirect: 'manual',
             signal: sinal
         })

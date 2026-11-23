@@ -2,6 +2,7 @@ const { createHash, randomUUID } = require('node:crypto')
 const dao = require('../../model/DAO/MensagemChat/RequisicaoChatDAO.js')
 const { formatarMensagem } = require('../../model/DAO/MensagemChat/MensagemChatDAO.js')
 const ia = require('./aiChatService.js')
+const financeiro = require('./financialContextService.js')
 const { criarErro, validarMensagens } = require('./chatValidation.js')
 
 const erroEstado = (r) => criarErro(r.status_erro || 409,
@@ -53,12 +54,21 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
     timer = setTimeout(verificar, 1000)
     try {
         combinado.throwIfAborted()
-        ia.obterConfiguracaoPrivada()
+        const config = ia.obterConfiguracaoPrivada()
         const contexto = validarMensagens([...(await dao.contexto(r)), { role: 'user', content: pergunta }])
+        let contextoFinanceiro
+        if (config?.versaoContextoFinanceiro) {
+            try {
+                contextoFinanceiro = await financeiro.construirContextoFinanceiro(usuario, contexto, { sinal: combinado })
+            } catch {
+                combinado.throwIfAborted()
+                console.error('Falha no chat:', 'CONTEXTO_FINANCEIRO_INDISPONIVEL')
+            }
+        }
         combinado.throwIfAborted()
         const atual = await dao.consultar(usuario, uuid)
         if (atual.estado !== 'gerando') throw erroEstado(atual)
-        const texto = await ia.gerarResposta(contexto, trecho, combinado)
+        const texto = await ia.gerarResposta(contexto, trecho, combinado, contextoFinanceiro)
         combinado.throwIfAborted()
         const concluida = await dao.concluir(r, texto)
         return await resultado(concluida)
