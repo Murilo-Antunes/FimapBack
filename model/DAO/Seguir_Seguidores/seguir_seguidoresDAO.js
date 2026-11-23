@@ -78,11 +78,26 @@ const getSeguindoByUsuarioId = async (id_usuario) => {
     }
 }
 
+async function verificarSegue(id_seguidor, id_seguindo) {
+    try{
+        const relacao = await knexConex('tbl_seguidores')
+            .select('id')
+            .where({ id_seguidor, id_seguindo })
+            .first()
+        return relacao
+
+    }catch(error){
+        console.error("Erro ao bsucar relações de seguindo e seguidor:", error)
+    }
+    
+}
+
 
 module.exports = {
     createSeguir,
     deleteSeguir,
     getSeguidoresByUsuarioId,
-    getSeguindoByUsuarioId
+    getSeguindoByUsuarioId,
+    verificarSegue
 
 }

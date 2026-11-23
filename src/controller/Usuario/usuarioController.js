@@ -3,9 +3,10 @@ const crypto = require('crypto')
 const codigoOTPModel = require('../../../model/DAO/condigo_OTP/codigo_otp_DAO.js')
 const dispositivoModel = require('../../../model/DAO/Dispositivos/dispositivos.js')
 const usuarioModel = require('../../../model/DAO/Usuario/usuarioDAO.js')
+const usuarioSocialDAO = require('../../../model/DAO/Usuario/usuarioSocialDAO.js')
+const { UploadArquivo, ExcluirVarias } = require('../../services/cloudinary.js')
 const configuracoesModel = require('../../../model/DAO/Configuracoes/configuracoes.js')
 const { enviarOTP } = require('../../config/email.js')
-const { gerarToken } = require('../../services/jwtService.js')
 
 const OTP_VALIDADE_MS = 5 * 60 * 1000
 const SENHA_MIN_CARACTERES = 8
@@ -23,6 +24,56 @@ const CAMPOS_EDITAVEIS = [
     'localizacao_estado',
     'visibilidade'
 ]
+
+// username_social: 3 a 30 caracteres [a-z0-9._], sem . ou _ no início/fim nem em sequência
+const REGEX_USERNAME_SOCIAL = /^(?![._])(?!.*[._]{2})[a-z0-9._]{3,30}(?<![._])$/
+
+// Valida os campos sociais de `dados` (normaliza trim e minúsculas do username).
+// Devolve { campo: 'mensagem' }; objeto vazio = tudo certo.
+const validarCamposSociais = (dados) => {
+    const campos = {}
+
+    for (const nome of ['nome_exibicao', 'username_social', 'biografia_social', 'localizacao_estado']) {
+        if (dados[nome] === undefined) continue
+
+        if (typeof dados[nome] !== 'string') {
+            campos[nome] = 'Valor inválido.'
+            continue
+        }
+
+        dados[nome] = dados[nome].trim()
+    }
+
+    if (typeof dados.username_social === 'string') {
+        dados.username_social = dados.username_social.toLowerCase()
+    }
+
+    if (typeof dados.nome_exibicao === 'string' &&
+        (dados.nome_exibicao.length < 2 || dados.nome_exibicao.length > 80)) {
+        campos.nome_exibicao = 'O nome de exibição deve ter entre 2 e 80 caracteres.'
+    }
+
+    if (typeof dados.username_social === 'string' && !REGEX_USERNAME_SOCIAL.test(dados.username_social)) {
+        campos.username_social = 'Nome de usuário social inválido.'
+    }
+
+    if (typeof dados.biografia_social === 'string' && dados.biografia_social.length > 250) {
+        campos.biografia_social = 'A biografia deve ter no máximo 250 caracteres.'
+    }
+
+    if (typeof dados.localizacao_estado === 'string' && dados.localizacao_estado.length > 60) {
+        campos.localizacao_estado = 'A localização deve ter no máximo 60 caracteres.'
+    }
+
+    return campos
+}
+
+const responderUsernameSocialEmUso = (res) =>
+    res.status(409).json({
+        sucesso: false,
+        codigo: 'USERNAME_SOCIAL_EM_USO',
+        mensagem: 'Este nome de usuário já está em uso.'
+    })
 
 // Gera OTP de 6 dígitos
 const gerarCodigo = () => crypto.randomInt(100000, 1000000).toString()
@@ -142,6 +193,19 @@ const criarCodigoOTPUsuario = async (req, res) => {
             return responderErro(res, config_message.ERRO_CRIAR_USUARIO)
         }
 
+        const configuracoesCriadas = await configuracoesModel.InsertConfiguracoes(id_usuario, {
+            notificacao: 0,
+            alerta: 0,
+            relatorio: 0,
+            recomendacao: 0,
+            topicos: 0
+        })
+
+        if (!configuracoesCriadas) {
+            await desfazerCadastro(id_usuario)
+            return responderErro(res, config_message.ERRO_CRIAR_USUARIO)
+        }
+
         // 3. cria o código ligado ao usuário
         const codigo = gerarCodigo()
 
@@ -237,6 +301,27 @@ const atualizarUsuario = async (req, res) => {
             }
         }
 
+        // Campos sociais: validação de formato e tamanho
+        const camposInvalidos = validarCamposSociais(dados)
+
+        if (Object.keys(camposInvalidos).length > 0) {
+            return res.status(400).json({
+                sucesso: false,
+                codigo: 'VALIDACAO',
+                mensagem: 'Corrija os campos informados.',
+                campos: camposInvalidos
+            })
+        }
+
+        // username_social é único (o índice do banco é a garantia final)
+        if (dados.username_social) {
+            const dono = await usuarioSocialDAO.GetUsuarioByUsernameSocial(dados.username_social)
+
+            if (dono && Number(dono.id) !== id_usuario) {
+                return responderUsernameSocialEmUso(res)
+            }
+        }
+
         // Se for trocar o username, garante que não pertence a outro usuário
         if (dados.username) {
             const existente = await usuarioModel.GetUsuarioByUsername(dados.username)
@@ -258,6 +343,11 @@ const atualizarUsuario = async (req, res) => {
             mensagem: config_message.USUARIO_ATUALIZADO.mensagem
         })
     } catch (error) {
+        // Corrida entre dois usuários escolhendo o mesmo @ (índice único)
+        if (error?.code === 'ER_DUP_ENTRY' && String(error.sqlMessage ?? '').includes('username_social')) {
+            return responderUsernameSocialEmUso(res)
+        }
+
         console.error('Erro ao atualizar usuário:', error)
         return responderErro(res, config_message.ERRO_ATUALIZAR_USUARIO)
     }
@@ -485,6 +575,32 @@ const buscarUsuarioPorUsername = async (req, res) => {
     }
 }
 
+const buscarUsuarioPorUsernameSocial = async (req, res) => {
+    try {
+        const username_social = typeof req.params?.username_social === 'string' ? req.params.username_social.trim() : ''
+
+        if (!username_social) {
+            return responderErro(res, config_message.USERNAME_INVALIDO || config_message.ERRO_INTERNO)
+        }
+
+        const usuario = await usuarioModel.BuscarUsuarioPorUsernameSocial(username_social)
+
+        if (!usuario) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        return res.status(config_message.USUARIO_ENCONTRADO.status).json({
+            sucesso: true,
+            mensagem: config_message.USUARIO_ENCONTRADO.mensagem,
+            usuario: semSenha(usuario)
+        })
+
+    } catch (error) {
+        console.error('Erro ao buscar usuário por username:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_USUARIO || config_message.ERRO_INTERNO)
+    }
+}
+
 // Buscar todos os usuários
 const buscarTodosUsuarios = async (req, res) => {
     try {
@@ -629,20 +745,10 @@ const login = async (req, res) => {
             })
         }
 
-        const accessToken = gerarToken({ sub: String(idDoUsuario(usuario)) })
-        if (!accessToken) {
-            return res.status(config_message.ERRO_LOGIN.status).json({
-                sucesso: false,
-                codigo: 'AUTH_CONFIGURACAO',
-                mensagem: config_message.ERRO_LOGIN.mensagem
-            })
-        }
-
         return res.status(config_message.LOGIN_SUCESSO.status).json({
             sucesso: true,
             mensagem: config_message.LOGIN_SUCESSO.mensagem,
-            usuario: semSenha(usuario),
-            access_token: accessToken
+            usuario: semSenha(usuario)
         })
     } catch (error) {
         console.error('Erro ao realizar login:', error)
@@ -678,10 +784,130 @@ const validarCodigoOTP = async (req, res) => {
     }
 }
 
+// GET /social/username-disponivel/:username_social?id_usuario=
+// Diz se o @ está livre (ou já é do próprio usuário que consulta).
+const verificarUsernameSocial = async (req, res) => {
+    try {
+        const username = String(req.params.username_social || '').trim().toLowerCase()
+        const id_usuario = Number(req.query?.id_usuario)
+
+        if (!REGEX_USERNAME_SOCIAL.test(username)) {
+            return res.status(400).json({
+                sucesso: false,
+                codigo: 'USERNAME_SOCIAL_INVALIDO',
+                mensagem: 'Nome de usuário social inválido.'
+            })
+        }
+
+        const dono = await usuarioSocialDAO.GetUsuarioByUsernameSocial(username)
+        const disponivel = !dono || (idValido(id_usuario) && Number(dono.id) === id_usuario)
+
+        return res.status(200).json({
+            sucesso: true,
+            mensagem: 'Consulta realizada.',
+            disponivel
+        })
+    } catch (error) {
+        console.error('Erro ao verificar username social:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_USUARIO)
+    }
+}
+
+// POST /foto-perfil/:id_usuario (multipart, campo "foto")
+// Sobe a foto ao Cloudinary, grava em foto_perfil e apaga a anterior.
+const enviarFotoPerfil = async (req, res) => {
+    let urlNova = null
+
+    try {
+        const id_usuario = Number(req.params.id_usuario)
+
+        if (!idValido(id_usuario)) {
+            return responderErro(res, config_message.ID_USUARIO_INVALIDO)
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ sucesso: false, mensagem: 'Envie uma foto no campo "foto".' })
+        }
+
+        const atual = await usuarioSocialDAO.GetFotoPerfil(id_usuario)
+
+        if (!atual) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        urlNova = await UploadArquivo(req.file, `perfis/${id_usuario}`)
+
+        await usuarioSocialDAO.UpdateFotoPerfil(id_usuario, urlNova)
+
+        // A foto nova já está salva; falha ao apagar a antiga não deve derrubar a resposta
+        const anterior = atual.foto_perfil
+        urlNova = null
+
+        if (anterior) {
+            try {
+                await ExcluirVarias([anterior])
+            } catch (erro) {
+                console.error('Erro ao excluir a foto anterior:', erro)
+            }
+        }
+
+        const atualizada = await usuarioSocialDAO.GetFotoPerfil(id_usuario)
+
+        return res.status(200).json({
+            sucesso: true,
+            mensagem: 'Foto de perfil atualizada.',
+            foto_perfil: atualizada?.foto_perfil ?? null
+        })
+    } catch (error) {
+        // Upload feito mas o UPDATE falhou: não deixa arquivo órfão
+        if (urlNova) {
+            try { await ExcluirVarias([urlNova]) } catch (_) { /* já registrado abaixo */ }
+        }
+
+        console.error('Erro ao enviar foto de perfil:', error)
+        return responderErro(res, config_message.ERRO_ATUALIZAR_USUARIO)
+    }
+}
+
+// DELETE /foto-perfil/:id_usuario
+const removerFotoPerfil = async (req, res) => {
+    try {
+        const id_usuario = Number(req.params.id_usuario)
+
+        if (!idValido(id_usuario)) {
+            return responderErro(res, config_message.ID_USUARIO_INVALIDO)
+        }
+
+        const atual = await usuarioSocialDAO.GetFotoPerfil(id_usuario)
+
+        if (!atual) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        await usuarioSocialDAO.UpdateFotoPerfil(id_usuario, null)
+
+        if (atual.foto_perfil) {
+            try {
+                await ExcluirVarias([atual.foto_perfil])
+            } catch (erro) {
+                console.error('Erro ao excluir a foto do Cloudinary:', erro)
+            }
+        }
+
+        return res.status(200).json({ sucesso: true, mensagem: 'Foto de perfil removida.' })
+    } catch (error) {
+        console.error('Erro ao remover foto de perfil:', error)
+        return responderErro(res, config_message.ERRO_ATUALIZAR_USUARIO)
+    }
+}
+
 module.exports = {
     criarCodigoOTPUsuario,
     verificarOTPCadastro,
     atualizarUsuario,
+    verificarUsernameSocial,
+    enviarFotoPerfil,
+    removerFotoPerfil,
     solicitarOTPAlteracaoSenha,
     verificarCodigoAlteracaoSenha,
     verificarSenhaAtual,
@@ -693,5 +919,6 @@ module.exports = {
     buscarUsuarioPorEmail,
     login,
     validarCodigoOTP,
-    buscarTodosCodigos
+    buscarTodosCodigos,
+    buscarUsuarioPorUsernameSocial
 }

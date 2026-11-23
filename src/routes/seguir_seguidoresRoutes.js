@@ -6,6 +6,7 @@ const router = express.Router()
 // Cadastro e autenticação por OTP
 router.post("/seguir", seguir_seguidoresContorller.seguir)
 
+router.get("/verificar", seguir_seguidoresContorller.verificarSegue)
 
 // Buscar usuários
 router.get("/listar/seguidores/:id_usuario", seguir_seguidoresContorller.listarSeguidores)
@@ -15,4 +16,3 @@ router.get("/listar/seguindo/:id_usuario", seguir_seguidoresContorller.listarSeg
 router.delete("/unfollow", seguir_seguidoresContorller.deixarDeSeguir)
 
 module.exports = router
-

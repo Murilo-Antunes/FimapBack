@@ -18,10 +18,9 @@ const postRoutes = require('./routes/postRoutes.js')
 const comentarRoutes = require('./routes/comentarioRoutes.js')
 const denunciarRoutes = require('./routes/denunciaRoutes.js')
 const curtirRoutes = require('./routes/curtidaRoutes.js')
-
-
-
 const seguirSeguidoresRoutes = require('./routes/seguir_seguidoresRoutes.js')
+const nivelRoutes = require('./routes/nivelRoutes.js')
+const denunciaUsuarioRoutes = require('./routes/denunciaUsuarioRoutes.js')
 const notificacaoRoutes = require('./routes/notificacaoRoutes.js')
 
 const sessaoRoutes = require('./routes/sessaoRoutes.js')
@@ -60,15 +59,17 @@ app.use('/v1/ia/chat', chatRoutes)
 app.use('/v1/openfinance', openFinanceRoutes)
 app.use('/v1/openfinance/usuario', usuarioRoutes)
 app.use('/v1/openfinance/metas', metasRoutes)
-app.use('/v1/seguindo', seguirSeguidoresRoutes)
 app.use('/v1/configuracoes', configuracoesRoutes)
-app.use('/v1/badge', badgeRoutes)
 app.use('/v1/simulacoes', simulacoesRoutes)
 app.use('/v1/notificacoes', notificacaoRoutes)
 app.use('/v1/comunidade/posts', postRoutes)
 app.use('/v1/comunidade/posts/comentario', comentarRoutes)
 app.use('/v1/comunidade/curtida', curtirRoutes)
 app.use('/v1/comunidade/denuncia', denunciarRoutes)
+app.use('/v1/comunidade/badge', badgeRoutes)
+app.use('/v1/comunidade/seguir', seguirSeguidoresRoutes)
+app.use('/v1/comunidade', nivelRoutes)
+app.use('/v1/comunidade/denuncias', denunciaUsuarioRoutes)
 
 /* ----------------------------- Servidor ----------------------------- */
 

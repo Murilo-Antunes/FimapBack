@@ -89,6 +89,9 @@ const UpdateUsers = async (usuario) => {
         const afetados = result?.[0]?.affectedRows ?? result?.rowCount ?? 0
         return afetados > 0
     } catch (error) {
+        // Valor único repetido (ex.: username_social): o controller responde 409
+        if (error?.code === 'ER_DUP_ENTRY') throw error
+
         console.error('Erro ao atualizar dados do usuário:', error)
         return false
     }
@@ -135,6 +138,35 @@ const GetAllUsers = async () => {
         return false
     }
 }
+
+const COLUNAS_PUBLICAS = [
+    'id',
+    'nome',
+    'nome_exibicao',
+    'username_social',
+    'biografia_social',
+    'localizacao_estado',
+    'foto_perfil',
+    'visibilidade',
+    'plano',
+    'data_cadastro',
+    'xp_usuario',
+    'nivel_total',
+    'ranking_posicao',
+    'total_seguidores',
+    'total_seguindo',
+    'total_badges',
+]
+
+async function BuscarUsuarioPorUsernameSocial(username_social) {
+    const usuario = await knexConex('vw_perfil_usuario')
+        .select(COLUNAS_PUBLICAS)
+        .where({ username_social })
+        .first()
+
+    return usuario ?? null
+}
+
 
 // Verificar se email, CPF ou username já existem
 const ValidarUser = async (usuario) => {
@@ -217,5 +249,6 @@ module.exports = {
     GetUsuarioByUsername,
     GetAllUsers,
     ValidarUser,
-    ValidarSenha
+    ValidarSenha,
+    BuscarUsuarioPorUsernameSocial
 }
