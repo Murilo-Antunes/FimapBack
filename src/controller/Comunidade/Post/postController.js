@@ -18,6 +18,8 @@ const FEED_LIMITE_PADRAO = 12
 const FEED_LIMITE_MAX = 30
 const FEED_BUSCA_MAX_CARACTERES = 100
 
+const TIPOS = ['texto', 'foto', 'video']
+
 /* ======================= HELPERS: RESPOSTAS/ENTRADA ======================= */
 
 // Id inteiro maior que zero (recebe o resultado de Number(...); NaN é barrado)
