@@ -5,10 +5,11 @@ const { randomUUID } = require('node:crypto')
 const knex = require('knex')
 const { load } = require('./helpers/chatHarness.js')
 const migration = require('../db/migrations/202611170001_chat_requisicoes.js')
+const migrationAcoes = require('../db/migrations/202611230002_chat_acoes.js')
 
 test('MySQL/InnoDB: migração, duas conexões, constraints, fencing e rollback real', {
     skip: !process.env.CHAT_TEST_MYSQL_URL && 'Defina CHAT_TEST_MYSQL_URL para um servidor MySQL descartável.'
-}, async () => {
+}, async (t) => {
     const mysql = require('mysql2/promise')
     const url = new URL(process.env.CHAT_TEST_MYSQL_URL)
     const connection = { host: url.hostname, port: Number(url.port || 3306), user: decodeURIComponent(url.username), password: decodeURIComponent(url.password) }
@@ -23,6 +24,7 @@ test('MySQL/InnoDB: migração, duas conexões, constraints, fencing e rollback 
         await db.raw('CREATE TABLE tbl_chat(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, id_usuario INT NOT NULL, FOREIGN KEY(id_usuario) REFERENCES tbl_usuario(id)) ENGINE=InnoDB')
         await db.schema.createTable('tbl_mensagem', (t) => { t.engine('InnoDB'); t.increments('id'); t.integer('id_chat'); t.text('conteudo'); t.integer('papel'); t.dateTime('data_envio') })
         await migration.up(db)
+        await migrationAcoes.up(db)
         await db('tbl_usuario').insert([{ id: 3 }, { id: 4 }])
         await db('tbl_chat').insert([{ id: 7, id_usuario: 3 }, { id: 8, id_usuario: 4 }])
         const dao = (pool) => load('model/DAO/MensagemChat/RequisicaoChatDAO.js', { '../../Database_config_knex/connection.js': pool })
@@ -50,6 +52,30 @@ test('MySQL/InnoDB: migração, duas conexões, constraints, fencing e rollback 
         await db('tbl_chat_requisicao').where('id', abandonada.id).update({ lease_ate_ms: 0 })
         assert.equal((await a.consultar(3, abandonada.requisicao_id)).estado, 'expirada')
         await assert.rejects(b.concluir(abandonada, 'Tardia'), { statusCode: 409 })
+
+        const sql = require('node:fs').readFileSync(require.resolve('../Database/Script_Fimap.sql'), 'utf8')
+        await db.raw(sql.match(/CREATE TABLE IF NOT EXISTS tbl_simulacao_investimento \([\s\S]+?\);/)[0])
+        await db('tbl_chat').insert({ id: 30, id_usuario: 3 })
+        const { stack } = require('./helpers/chatStack.js')
+        const ia = require('../src/services/aiChatService.js')
+        t.mock.method(ia, 'interpretarAcao', async () => ({
+            versao: 1, intencao: 'propor', tipo: 'investimento',
+            dados: Object.fromEntries(Object.entries({
+                nome: 'Simulação MySQL', valor_inicial: 0, aporte_mensal: 200, prazo: 12, rentabilidade: 6
+            }).map(([chave, valor]) => [chave, { valor, origem: 'usuario' }]))
+        }))
+        const { service } = stack(ia, { db })
+        const enviar = (texto, uuid = randomUUID()) => service.gerar(3, 30, uuid, texto, async () => {})
+        const proposta = await enviar('Simule um investimento de R$ 200 por mês')
+        const comando = proposta.mensagem_assistente.conteudo.match(/confirmar ação [0-9a-f]{8}/)[0]
+        assert.equal((await db('tbl_simulacao_investimento')).length, 0)
+        await db('tbl_chat_requisicao').where('id_chat', 30).update({ criada_ms: Date.now() - 10_000 })
+        const uuid = randomUUID()
+        const salvo = await enviar(comando, uuid)
+        assert.match(salvo.mensagem_assistente.conteudo, /Simulações → Investimentos/)
+        assert.equal((await enviar(comando, uuid)).recuperada, true)
+        assert.deepEqual((await db('tbl_simulacao_investimento').pluck('id_usuario')), [3])
+        assert.equal((await db('tbl_chat_acao')).length, 0)
     } finally {
         if (db) await db.destroy()
         if (other) await other.destroy()

@@ -494,6 +494,8 @@ module.exports = {
     filtrarTransacoesPorPeriodo,
     totalizarMovimentacao,
     obterDataBrasilia,
+    calcularNucleoFinanceiro,
+    obterUltimasTransacoes,
     // Expostos para teste
     calcularMovimentacaoMensal,
     calcularEvolucao,

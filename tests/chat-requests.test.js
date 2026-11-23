@@ -257,3 +257,167 @@ test('controller valida IDs e corpo antes de abrir SSE', async () => {
         assert.equal(res.flushed, undefined)
     }
 })
+
+test('chat confirma criação e exclusão de simulações e metas com titularidade e idempotência', async (t) => {
+    const s = stack()
+    const ia = require('../src/services/aiChatService.js')
+    s.sqlite.exec(`
+        CREATE TABLE tbl_simulacao_investimento (id INTEGER PRIMARY KEY, id_usuario INTEGER, data_criacao TEXT,
+            nome TEXT, descricao TEXT, valor_inicial REAL, aporte_mensal REAL, prazo INTEGER, rentabilidade REAL);
+        CREATE TABLE tbl_simulacao_amortizacao (id INTEGER PRIMARY KEY, id_usuario INTEGER, data_criacao TEXT,
+            nome TEXT, descricao TEXT, saldo_devedor REAL, aporte_mensal REAL, prazo INTEGER, taxa REAL, sistema_calculo TEXT, modalidade TEXT);
+        CREATE TABLE tbl_meta_financeira (id INTEGER PRIMARY KEY, id_usuario INTEGER, nome TEXT, valor_inicio REAL,
+            valor_desejado REAL, aporte_mensal REAL, data_alvo TEXT, id_categoria INTEGER, valor_total REAL, status INTEGER,
+            descricao TEXT, id_conta_vinculada INTEGER);
+        CREATE TABLE tbl_categoria_meta (id INTEGER PRIMARY KEY, id_usuario INTEGER, nome TEXT);
+        INSERT INTO tbl_categoria_meta VALUES (1, NULL, 'Reserva'), (2, 4, 'Privada');
+        INSERT INTO tbl_simulacao_investimento (id, id_usuario, nome) VALUES (100, 4, 'Outro titular');
+    `)
+    let proposta
+    t.mock.method(ia, 'obterConfiguracaoPrivada', () => {})
+    const inferencia = t.mock.method(ia, 'interpretarAcao', async () => ({
+        versao: 1, intencao: proposta.acao, tipo: proposta.tipo,
+        dados: Object.fromEntries(Object.entries(proposta.dados).map(([key, valor]) => [key, { valor, origem: 'usuario' }]))
+    }))
+    const conversar = async (texto, uuid = randomUUID(), chat = 7, usuario = 3) => {
+        s.state.now += 6000
+        const resposta = await send(s, uuid, chat, usuario, texto)
+        return resposta.mensagem_assistente.conteudo
+    }
+    const confirmar = (texto) => texto.match(/confirmar ação [0-9a-f]{8}/)[0]
+
+    proposta = { acao: 'excluir', tipo: 'investimento', dados: { id: 100 } }
+    assert.match(await conversar('Excluir simulação de investimento 100'), /Não encontrei/)
+    assert.equal(s.sqlite.prepare('SELECT id FROM tbl_simulacao_investimento WHERE id = 100').get().id, 100)
+
+    for (const [tipo, tabela, dados] of [
+        ['amortizacao', 'tbl_simulacao_amortizacao', { nome: 'SAC', saldo_devedor: 10000, prazo: 48,
+            taxa: 12, aporte_mensal: 100, sistema_calculo: 'SAC', modalidade: 'REDUZIR_PRAZO' }],
+        ['investimento', 'tbl_simulacao_investimento', { nome: 'Aporte', valor_inicial: 100,
+            aporte_mensal: 50, prazo: 12, rentabilidade: 10 }],
+        ['meta', 'tbl_meta_financeira', { nome: 'Reserva', valor_inicio: 100, valor_desejado: 1000,
+            aporte_mensal: 50, data_alvo: '2040-11-10', categoria: 'Reserva' }]
+    ]) {
+        const pessoais = s.sqlite.prepare(`SELECT id FROM ${tabela} WHERE id_usuario = 3`)
+        proposta = { acao: 'criar', tipo, dados }
+        const resumo = await conversar(`Criar ${tipo} ${dados.nome}`)
+        if (tipo === 'meta') assert.match(resumo, /Prazo.*longo/)
+        const pendente = confirmar(resumo)
+        assert.equal(pessoais.all().length, 0)
+        if (tipo === 'amortizacao') {
+            assert.match(await conversar(pendente, randomUUID(), 8, 4), /Não há um rascunho pronto/)
+        }
+        const uuid = randomUUID()
+        assert.match(await conversar(pendente, uuid), /^Criei /)
+        assert.match(await conversar(pendente, uuid), /^Criei /)
+        const [registro] = pessoais.all()
+        assert.ok(registro.id)
+        assert.equal(pessoais.all().length, 1)
+        if (tipo === 'meta') {
+            const metas = require('./helpers/chatHarness.js').load('model/DAO/Metas/MetasDAO.js', { knex: () => s.db })
+            assert.equal((await metas.GetAllMetasUsuario(3))[0].id, registro.id)
+            assert.equal((await metas.GetAllMetasUsuario(4)).length, 0)
+        } else if (tipo === 'amortizacao') {
+            const amortizacoes = require('./helpers/chatHarness.js').load('model/DAO/Simulacoes/SimulacaoAmortizacaoDAO.js', { knex: () => s.db })
+            const lista = await amortizacoes.listarSimulacoesAmortizacao(3, { pagina: 1, tamanho: 20 })
+            assert.equal(lista[0].id, registro.id)
+        }
+        proposta = { acao: 'excluir', tipo, dados: { nome: dados.nome } }
+        const excluir = confirmar(await conversar(`Excluir ${tipo} ${dados.nome}`))
+        assert.equal(pessoais.all().length, 1)
+        assert.match(await conversar(excluir), /^Excluí /)
+        assert.equal(pessoais.all().length, 0)
+        // Mantém o teste independente da janela de 12 solicitações/minuto.
+        s.state.now += 60_000
+    }
+    assert.equal(inferencia.mock.callCount(), 7)
+})
+
+test('rascunho assistido preserva dados, aceita sugestões e edições, recupera falhas e salva nas fontes das abas', async (t) => {
+    const s = stack(provider())
+    const ia = require('../src/services/aiChatService.js')
+    const { load } = require('./helpers/chatHarness.js')
+    const usuario = 3
+    t.after(() => s.sqlite.close())
+    s.sqlite.exec(`
+        CREATE TABLE tbl_simulacao_investimento (id INTEGER PRIMARY KEY, id_usuario INTEGER, data_criacao TEXT,
+            nome TEXT, descricao TEXT, valor_inicial REAL, aporte_mensal REAL, prazo INTEGER, rentabilidade REAL);
+        CREATE TABLE tbl_alerta_gasto_ia (id INTEGER PRIMARY KEY, id_usuario INTEGER, chave TEXT, mes TEXT, categoria TEXT,
+            titulo TEXT, mensagem TEXT, acao TEXT, area TEXT, expira_ms INTEGER, UNIQUE (id_usuario, chave));
+    `)
+    const estruturar = (intencao, tipo, campos = {}, sugeridos = []) => ({
+        versao: 1, intencao, tipo,
+        dados: Object.fromEntries(Object.entries(campos).map(([k, valor]) => [k, { valor,
+            origem: sugeridos.includes(k) ? 'ia' : 'usuario' }]))
+    })
+    const propostas = new Map([
+        ['Como funciona uma simulação?', { versao: 1, intencao: 'orientacao' }],
+        ['Simule um investimento mensal de R$ 150', estruturar('propor', 'investimento', { aporte_mensal: 150 })],
+        ['Você pode sugerir os outros dados?', estruturar('editar', 'investimento',
+            { nome: 'Cenário mensal', valor_inicial: 0, prazo: 24, rentabilidade: 8, aporte_mensal: 300 },
+            ['nome', 'valor_inicial', 'prazo', 'rentabilidade', 'aporte_mensal'])],
+        ['Mude para R$ 200 por mês', estruturar('editar', 'investimento', { aporte_mensal: 200 })],
+        ['Troque o prazo para menos seis meses', estruturar('editar', 'investimento', { prazo: -6 })],
+        ['Mantenha 24 meses', estruturar('editar', 'investimento', { prazo: 24 })],
+        ['Me sugira um plano para reduzir gastos', estruturar('propor', 'recomendacao', {
+            titulo: 'Revisar gastos recorrentes', mensagem: 'Revise suas assinaturas semanalmente.', area: 'nucleo'
+        }, ['titulo', 'mensagem', 'area'])]
+    ])
+    t.mock.method(ia, 'interpretarAcao', async ({ mensagem, rascunho }) => {
+        if (mensagem === 'Você pode sugerir os outros dados?') assert.equal(rascunho.dados.aporte_mensal, 150)
+        if (mensagem === 'Tente outro prazo') throw new DOMException('timeout', 'TimeoutError')
+        return propostas.get(mensagem) ?? { versao: 2, intencao: 'editar' }
+    })
+    const perguntar = async (texto, uuid = randomUUID(), chat = 7, user = usuario) => {
+        s.state.now += 6001
+        const resultado = await send(s, uuid, chat, user, texto)
+        return resultado.mensagem_assistente.conteudo
+    }
+    const codigo = (texto) => texto.match(/confirmar ação [0-9a-f]{8}/)[0]
+    const historico = load('model/DAO/Simulacoes/SimulacaoInvestimentoDAO.js', { knex: () => s.db })
+    const listarInvestimentos = () => historico.listarSimulacoesInvestimento(usuario, { pagina: 1, tamanho: 20 })
+    assert.equal(await perguntar('Como funciona uma simulação?'), 'Resposta 🌎')
+    assert.match(await perguntar('Simule um investimento mensal de R$ 150'), /150,00/)
+    assert.match(await perguntar('Tente outro prazo'), /preservados/)
+    assert.match(await perguntar('Texto que gera resposta inválida'), /preservados/)
+    const sugerido = await perguntar('Você pode sugerir os outros dados?')
+    assert.match(sugerido, /150,00/)
+    assert.doesNotMatch(sugerido, /300,00/)
+    assert.match(sugerido, /sugerido pela IA/)
+    const antes = codigo(sugerido)
+    const editado = await perguntar('Mude para R$ 200 por mês')
+    assert.match(editado, /200,00/)
+    assert.match(await perguntar(antes), /Não há um rascunho pronto/)
+    assert.match(await perguntar(codigo(editado), randomUUID(), 8, 4), /Não há um rascunho pronto/)
+    assert.match(await perguntar('Troque o prazo para menos seis meses'), /precisa de revisão/)
+    assert.match(await perguntar('confirmo'), /Não há um rascunho pronto/)
+    const pronto = codigo(await perguntar('Mantenha 24 meses'))
+    assert.equal((await listarInvestimentos()).length, 0)
+    s.sqlite.exec(`CREATE TRIGGER falhar_acao BEFORE INSERT ON tbl_simulacao_investimento BEGIN SELECT RAISE(ABORT, 'falha'); END`)
+    await assert.rejects(perguntar(pronto), { code: 'CHAT_ACAO_INDISPONIVEL' })
+    assert.equal((await listarInvestimentos()).length, 0)
+    s.sqlite.exec('DROP TRIGGER falhar_acao')
+    s.state.now += 60_000
+    const confirmacao = randomUUID()
+    assert.match(await perguntar(pronto, confirmacao), /Simulações → Investimentos/)
+    assert.match(await perguntar(pronto, confirmacao), /Simulações → Investimentos/)
+    assert.match(await perguntar(pronto), /Não há um rascunho pronto/)
+    assert.equal((await listarInvestimentos())[0].aporte_mensal, 200)
+    assert.equal((await listarInvestimentos()).length, 1)
+
+    assert.match(await perguntar('Me sugira um plano para reduzir gastos'), /sugerido pela IA/)
+    assert.match(await perguntar('Cancelar rascunho'), /cancelado/)
+    assert.match(await perguntar('pode salvar'), /Não há um rascunho pronto/)
+    assert.match(await perguntar('Me sugira um plano para reduzir gastos'), /Revise suas assinaturas/)
+    assert.match(await perguntar('pode salvar'), /Recomendações/)
+
+    const rota = load('src/routes/financialRecommendationsRoutes.js', { '../../model/Database_config_knex/connection.js': s.db })
+    const consultarHistorico = async (id) => {
+        const handler = rota.stack.find((layer) => layer.route?.path === '/historico').route.stack[0].handle
+        let corpo
+        await handler({ query: {}, usuario: { id } }, { json: (dados) => { corpo = dados } })
+        return corpo.recomendacoes
+    }
+    assert.equal((await consultarHistorico(usuario))[0].titulo, 'Revisar gastos recorrentes')
+    assert.equal((await consultarHistorico(4)).length, 0)
+})
