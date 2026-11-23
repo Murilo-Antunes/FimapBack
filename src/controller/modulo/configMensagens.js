@@ -2285,6 +2285,31 @@ DENUNCIA_AUTO_DENUNCIA:  { status: 400, mensagem: 'Você não pode denunciar a s
 NIVEIS_ENCONTRADOS:  { status: 200, mensagem: 'Níveis encontrados.' },
 ERRO_BUSCAR_NIVEIS:  { status: 500, mensagem: 'Erro ao buscar níveis.' },
 
+    POST_SALVO:{
+        status: 201, mensagem: 'Post salvo com sucesso.'
+    },
+    POST_JA_SALVO:{
+        status: 409, mensagem: 'Você já salvou este post.'
+    },
+    POST_SALVO_REMOVIDO:{
+        status: 200, mensagem: 'Post removido dos salvos.'
+    },
+    POST_NAO_ESTAVA_SALVO:{
+        status: 404, mensagem: 'Este post não está nos seus salvos.'
+    },
+    POSTS_SALVOS_ENCONTRADOS:{
+        status: 200, mensagem: 'Posts salvos encontrados.'
+    },
+    ERRO_SALVAR_POST:{
+        status: 500, mensagem: 'Erro ao salvar o post.'
+    },
+    ERRO_REMOVER_POST_SALVO:{
+        status: 500, mensagem: 'Erro ao remover o post dos salvos.'
+    },
+    ERRO_BUSCAR_POSTS_SALVOS:{
+        status: 500, mensagem: 'Erro ao buscar os posts salvos.'
+    }
+
 }
 
 module.exports = config_message

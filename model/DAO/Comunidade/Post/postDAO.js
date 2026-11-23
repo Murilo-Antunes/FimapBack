@@ -224,6 +224,137 @@ const DeletePost = async (postId, idUsuario) => {
         throw error
     }
 }
+/* ------------------------------ Create ------------------------------ */
+
+// Salva um post para o usuário. Retorna o id criado.
+// Erros esperados (tratados pelo controller, sem log aqui):
+//   ER_DUP_ENTRY            -> usuário já salvou esse post
+//   ER_NO_REFERENCED_ROW_2  -> usuário ou post inexistente
+const SalvarPost = async (idUsuario, idPost) => {
+    const sql = `insert into tbl_post_salvo (data_salvo, id_usuario, id_post)
+        values (now(), ?, ?)`
+
+    try {
+        const [result] = await knexConex.raw(sql, [idUsuario, idPost])
+
+        return result.insertId
+    } catch (error) {
+        if (error.code !== 'ER_DUP_ENTRY' && error.code !== 'ER_NO_REFERENCED_ROW_2') {
+            console.error('Erro ao salvar post:', error)
+        }
+
+        throw error
+    }
+}
+
+/* ------------------------------- Read ------------------------------- */
+
+// Verifica se o usuário já salvou o post (true/false)
+const ExistePostSalvo = async (idUsuario, idPost) => {
+    try {
+        const [rows] = await knexConex.raw(
+            'select id from tbl_post_salvo where id_usuario = ? and id_post = ? limit 1',
+            [idUsuario, idPost]
+        )
+
+        return rows.length > 0
+    } catch (error) {
+        console.error('Erro ao verificar post salvo:', error)
+        throw error
+    }
+}
+
+// Dado um conjunto de posts (ex.: página do feed), retorna os ids que o usuário salvou.
+// Serve para marcar "salvo = true" no feed sem uma query por post. Retorna array de ids.
+const GetIdsPostsSalvos = async (idUsuario, idsPosts) => {
+    if (!Array.isArray(idsPosts) || idsPosts.length === 0) return []
+
+    const placeholders = idsPosts.map(() => '?').join(', ')
+    const sql = `select id_post from tbl_post_salvo
+        where id_usuario = ? and id_post in (${placeholders})`
+
+    try {
+        const [rows] = await knexConex.raw(sql, [idUsuario, ...idsPosts])
+
+        return rows.map((row) => row.id_post)
+    } catch (error) {
+        console.error('Erro ao buscar ids de posts salvos:', error)
+        throw error
+    }
+}
+
+// Aba "Salvos" do perfil: posts salvos pelo usuário, do mais recente salvo para o mais antigo.
+// Só entram posts ativos (post removido/ocultado some da aba, mas o vínculo continua no banco).
+// "curtiu" é calculado para o próprio dono da aba. Retorna { posts, total }.
+const GetPostsSalvosByIdUsuario = async ({ idUsuario, limite, offset }) => {
+    const from = `from tbl_post_salvo ps
+        join tbl_post p on p.id = ps.id_post
+        join tbl_usuario u on u.id = p.id_usuario
+        where ps.id_usuario = ? and p.status = ?`
+
+    try {
+        const [[{ total }]] = await knexConex.raw(
+            `select count(*) as total ${from}`,
+            [idUsuario, STATUS_ATIVO]
+        )
+
+        const [posts] = await knexConex.raw(
+            `select p.*,
+                ps.data_salvo,
+                u.id as autor_id,
+                u.nome_exibicao as autor_nome_exibicao,
+                u.username_social as autor_username_social,
+                u.foto_perfil as autor_foto_perfil,
+                (select count(*) from tbl_curtida_post cp where cp.id_post = p.id) as total_curtidas,
+                (select count(*) from tbl_comentario c where c.id_post = p.id) as total_comentarios,
+                exists(select 1 from tbl_curtida_post cp
+                       where cp.id_post = p.id and cp.id_usuario = ?) as curtiu,
+                1 as salvo
+             ${from}
+             order by ps.data_salvo desc, ps.id desc
+             limit ? offset ?`,
+            [idUsuario, idUsuario, STATUS_ATIVO, limite, offset]
+        )
+
+        return { posts, total: Number(total) }
+    } catch (error) {
+        console.error('Erro ao buscar posts salvos:', error)
+        throw error
+    }
+}
+
+// Quantos usuários salvaram o post
+const ContarSalvosPorPost = async (idPost) => {
+    try {
+        const [[{ total }]] = await knexConex.raw(
+            'select count(*) as total from tbl_post_salvo where id_post = ?',
+            [idPost]
+        )
+
+        return Number(total)
+    } catch (error) {
+        console.error('Erro ao contar salvos do post:', error)
+        throw error
+    }
+}
+
+/* ------------------------------ Delete ------------------------------ */
+
+// Remove o post dos salvos (exclusão física, a tabela é só vínculo).
+// Retorna as linhas afetadas (0 = não estava salvo)
+const RemoverPostSalvo = async (idUsuario, idPost) => {
+    try {
+        const [result] = await knexConex.raw(
+            'delete from tbl_post_salvo where id_usuario = ? and id_post = ?',
+            [idUsuario, idPost]
+        )
+
+        return result.affectedRows
+    } catch (error) {
+        console.error('Erro ao remover post salvo:', error)
+        throw error
+    }
+}
 
 module.exports = {
     CreatePost,
@@ -235,5 +366,11 @@ module.exports = {
     GetPerfilSocial,
     GetAllPostsByIdUsuario,
     GetAllPostsInativosByIdUsuario,
-    GetAllPostsAtivosByIdUsuario
+    GetAllPostsAtivosByIdUsuario,
+    SalvarPost,
+    RemoverPostSalvo,
+    ExistePostSalvo,
+    GetIdsPostsSalvos,
+    GetPostsSalvosByIdUsuario,
+    ContarSalvosPorPost
 }
