@@ -5,7 +5,6 @@ const dispositivoModel = require('../../../model/DAO/Dispositivos/dispositivos.j
 const usuarioModel = require('../../../model/DAO/Usuario/usuarioDAO.js')
 const usuarioSocialDAO = require('../../../model/DAO/Usuario/usuarioSocialDAO.js')
 const { UploadArquivo, ExcluirVarias } = require('../../services/cloudinary.js')
-const configuracoesModel = require('../../../model/DAO/Configuracoes/configuracoes.js')
 const { enviarOTP } = require('../../config/email.js')
 
 const OTP_VALIDADE_MS = 5 * 60 * 1000
@@ -193,18 +192,6 @@ const criarCodigoOTPUsuario = async (req, res) => {
             return responderErro(res, config_message.ERRO_CRIAR_USUARIO)
         }
 
-        const configuracoesCriadas = await configuracoesModel.InsertConfiguracoes(id_usuario, {
-            notificacao: 0,
-            alerta: 0,
-            relatorio: 0,
-            recomendacao: 0,
-            topicos: 0
-        })
-
-        if (!configuracoesCriadas) {
-            await desfazerCadastro(id_usuario)
-            return responderErro(res, config_message.ERRO_CRIAR_USUARIO)
-        }
 
         // 3. cria o código ligado ao usuário
         const codigo = gerarCodigo()

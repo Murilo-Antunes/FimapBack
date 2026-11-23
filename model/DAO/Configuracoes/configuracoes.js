@@ -56,7 +56,6 @@ const UpdateConfiguracoesById = async (idUsuario, configuracoes = {}) => {
 }
 
 module.exports = {
-    InsertConfiguracoes,
     GetConfiguracoesById,
     UpdateConfiguracoesById
 }
