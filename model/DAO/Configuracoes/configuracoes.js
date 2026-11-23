@@ -22,25 +22,6 @@ const montarValores = (configuracoes = {}) => {
     return [notificacao, alerta, relatorio, recomendacao, topicos]
 }
 
-// Insere configurações. Retorna o id criado (0 em erro)
-const InsertConfiguracoes = async (idUsuario, configuracoes = {}) => {
-    const sql = `insert into tbl_configuracoes
-        (notificacao, alerta, relatorio, recomendacao, topicos, id_usuario)
-        values (?, ?, ?, ?, ?, ?)`
-
-    try {
-        const [result] = await knexConex.raw(sql, [
-            ...montarValores(configuracoes),
-            idUsuario
-        ])
-
-        return result?.insertId || 0
-    } catch (error) {
-        console.error('Erro ao inserir configurações:', error)
-        return 0
-    }
-}
-
 // Busca configurações do usuário. Retorna array ([] em erro)
 const GetConfiguracoesById = async (idUsuario) => {
     const sql = `select * from tbl_configuracoes where id_usuario = ?`
