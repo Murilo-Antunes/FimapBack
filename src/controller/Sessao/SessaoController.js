@@ -4,7 +4,7 @@ const messages = require('../../controller/modulo/configMensagens.js')
 // Criar sessão
 const criarSessao = async (req, res) => {
     try {
-        const sessao = req.body;
+        const sessao = { ...req.body, id_usuario: req.usuario.id };
         const id = await SessaoDAO.CreateSessao(sessao);
         res.status(201).json({ message: messages.success.sessionCreated, id });
     } catch (error) {
@@ -17,7 +17,7 @@ const criarSessao = async (req, res) => {
 const obterSessaoPorId = async (req, res) => {
     try {
         const { id } = req.params;
-        const sessao = await SessaoDAO.GetSessaoById(id);
+        const sessao = await SessaoDAO.GetSessaoById(id, req.usuario.id);
         if (!sessao) {
             return res.status(404).json({ error: messages.error.sessionNotFound });
         }
@@ -33,7 +33,7 @@ const atualizarUltimoUso = async (req, res) => {
     try {
         const { id } = req.params;
         const { ultimoUso } = req.body;
-        const sucesso = await SessaoDAO.UpdateSessao({ id, ultimo_uso: ultimoUso });
+        const sucesso = await SessaoDAO.UpdateSessao({ id, id_usuario: req.usuario.id, ultimo_uso: ultimoUso });
         if (!sucesso) {
             return res.status(404).json({ error: messages.error.sessionNotFound });
         }
@@ -49,7 +49,7 @@ const revogarSessao = async (req, res) => {
     try {
         const { id } = req.params;
         const { dataRevogacao } = req.body;
-        const sucesso = await SessaoDAO.UpdateSessao({ id, data_revogacao: dataRevogacao });
+        const sucesso = await SessaoDAO.UpdateSessao({ id, id_usuario: req.usuario.id, data_revogacao: dataRevogacao });
         if (!sucesso) {
             return res.status(404).json({ error: messages.error.sessionNotFound });
         }
@@ -64,7 +64,7 @@ const revogarSessao = async (req, res) => {
 const deletarSessao = async (req, res) => {
     try {
         const { id } = req.params;
-        const sucesso = await SessaoDAO.DeleteSessao(id);
+        const sucesso = await SessaoDAO.DeleteSessao(id, req.usuario.id);
         if (!sucesso) {
             return res.status(404).json({ error: messages.error.sessionNotFound });
         }

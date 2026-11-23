@@ -17,6 +17,7 @@ const ARQUIVOS_MAX_POR_POST = 10
 const FEED_LIMITE_PADRAO = 12
 const FEED_LIMITE_MAX = 30
 const FEED_BUSCA_MAX_CARACTERES = 100
+const TIPOS = ['texto', 'foto', 'video']
 
 const TIPOS = ['texto', 'foto', 'video']
 
@@ -47,7 +48,7 @@ const lerParam = (req, ...nomes) => {
 // TEMPORÁRIO: lê o id do body ou da query, então qualquer pessoa pode enviar o id
 // de outro usuário e se passar por ele. Quando o login com token estiver pronto,
 // troque por req.usuario.id (vindo do middleware de autenticação).
-const idDoUsuarioLogado = (req) => Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 // Extrai o texto do post da requisição. O front pode mandar de três formas:
 //   - array em req.body.conteudo: [{ tipo: 'texto', valor }]
@@ -164,8 +165,8 @@ const formatarPost = (p) => ({
 const perfilSocialCompleto = (u) =>
     Boolean(u?.nome_exibicao?.trim() && u?.username_social?.trim())
 
-// Id do usuário que está vendo (só para marcar "curtiu" e "salvo"); 0 quando não informado
-const idDoVisualizador = (req) => Number(req.query?.id_usuario) || 0
+// O usuário que visualiza é sempre obtido do JWT, nunca da query string.
+const idDoVisualizador = (req) => Number(req.usuario?.id) || 0
 
 // Marca "salvo" nos posts crus de uma listagem com UMA query (em vez de uma por post).
 // Sem visualizador (id 0) ou sem posts, devolve a lista como veio (salvo = false).
@@ -606,7 +607,7 @@ const deletarPost = async (req, res) => {
 // chegarem juntas, a segunda cai no ER_DUP_ENTRY e também vira 409.
 const salvarPost = async (req, res) => {
     try {
-        const id_post = lerParam(req, 'postId', 'id_post')
+        const id_post = Number(req.params?.postId ?? req.params?.id_post ?? req.body?.id_post)
         const id_usuario = idDoUsuarioLogado(req)
 
         if (!idValido(id_post)) return responderErro(res, config_message.ID_POST_INVALIDO)
@@ -674,16 +675,64 @@ const removerPostSalvo = async (req, res) => {
     }
 }
 
-// GET /salvos?pagina=1&limite=12&id_usuario=
+// POST /salvar/alternar — alterna o estado do post para o usuário autenticado.
+const alternarSalvarPost = async (req, res) => {
+    try {
+        const id_post = Number(req.body?.id_post)
+        const id_usuario = idDoUsuarioLogado(req)
+
+        if (!idValido(id_post)) return responderErro(res, config_message.ID_POST_INVALIDO)
+        if (!idValido(id_usuario)) return responderErro(res, config_message.NAO_AUTENTICADO)
+        if (!await postDAO.ExisteUsuario(id_usuario)) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        const post = await postDAO.GetPostById(id_post, id_usuario)
+        if (!post || Number(post.status) !== STATUS_ATIVO) {
+            return responderErro(res, config_message.POST_NAO_ENCONTRADO)
+        }
+
+        const jaSalvo = await postDAO.ExistePostSalvo(id_usuario, id_post)
+        if (jaSalvo) await postDAO.RemoverPostSalvo(id_usuario, id_post)
+        else await postDAO.SalvarPost(id_usuario, id_post)
+
+        return responderSucesso(
+            res,
+            jaSalvo ? config_message.POST_SALVO_REMOVIDO : config_message.POST_SALVO,
+            { salvo: !jaSalvo }
+        )
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return responderErro(res, config_message.POST_JA_SALVO)
+        }
+        console.error('Erro ao alternar post salvo:', error)
+        return responderErro(res, config_message.ERRO_SALVAR_POST)
+    }
+}
+
+// GET /salvar/verificar/:id_post — consulta o estado do próprio usuário autenticado.
+const verificarPostSalvo = async (req, res) => {
+    try {
+        const id_post = lerParam(req, 'id_post')
+        const id_usuario = idDoUsuarioLogado(req)
+
+        if (!idValido(id_post)) return responderErro(res, config_message.ID_POST_INVALIDO)
+        if (!idValido(id_usuario)) return responderErro(res, config_message.NAO_AUTENTICADO)
+
+        const salvo = await postDAO.ExistePostSalvo(id_usuario, id_post)
+        return responderSucesso(res, config_message.SALVOS_ENCONTRADOS, { salvo })
+    } catch (error) {
+        console.error('Erro ao verificar post salvo:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_SALVOS)
+    }
+}
+
+// GET /salvos/:id_usuario?pagina=1&limite=12
 // Aba "Salvos" do perfil: posts ativos que o usuário salvou, do mais recente salvo
 // para o mais antigo. Sem posts salvos, a resposta é sucesso com lista vazia.
-// TEMPORÁRIO: o id vem da URL (/salvos/:usuarioId) ou do body/query, então qualquer
-// pessoa vê os salvos de outra. Com o login por token, use somente req.usuario.id:
-// a aba Salvos é privada do dono.
 const listarPostsSalvos = async (req, res) => {
     try {
-        const idDaUrl = lerParam(req, 'usuarioId', 'id_usuario')
-        const id_usuario = Number.isNaN(idDaUrl) ? idDoUsuarioLogado(req) : idDaUrl
+        const id_usuario = idDoUsuarioLogado(req)
 
         if (!idValido(id_usuario)) {
             return responderErro(res, config_message.NAO_AUTENTICADO)
@@ -722,6 +771,8 @@ module.exports = {
     atualizarPost,
     deletarPost,
     salvarPost,
+    alternarSalvarPost,
+    verificarPostSalvo,
     removerPostSalvo,
     listarPostsSalvos
 }

@@ -4,6 +4,11 @@ const router = express.Router()
 const openFinanceController = require("../controller/OpenFinance/openFinanceController.js")
 const contasRendimentoController = require("../controller/OpenFinance/ContasRendimentoController.js")
 const extratoCartaoController = require("../controller/OpenFinance/extratoCartaoController.js")
+const autenticar = require('../middlewares/autorization.js')
+const autorizarUsuario = require('../middlewares/autorizarUsuario.js')
+const autorizarItemFinanceiro = require('../middlewares/autorizarItemFinanceiro.js')
+
+router.use(autenticar, autorizarUsuario)
 
 router.post("/connect-token", openFinanceController.gerarConnectToken)
 
@@ -14,6 +19,7 @@ router.get("/contas-rendimento", contasRendimentoController.listarContasRendimen
 router.delete("/conexoes/:id_usuario/:id", openFinanceController.deletarConexao)
 
 // -------------------- OBTER DADOS -------------------- 
+router.use('/financeiro', autorizarItemFinanceiro)
 router.get("/financeiro/contas/:itemId", openFinanceController.obterContas)
 router.get("/financeiro/cartoes/:itemId", openFinanceController.obterCartoes)
 router.get("/financeiro/investimentos/:itemId", openFinanceController.obterInvestimentos)

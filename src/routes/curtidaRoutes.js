@@ -3,6 +3,7 @@ const router = express.Router();
 
 const curtidaComentarioController = require('../../src/controller/Comunidade/Curtidas/Curtidas_comentario/curtidasComentariosController.js')
 const curtidaPostController = require('../../src/controller/Comunidade/Curtidas/Curtidas_post/curtidasPostController.js')
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 router.post("/curtir-post", curtidaPostController.curtirPost)
 router.post("/alternar-curtida-post", curtidaPostController.alternarCurtidaPost)

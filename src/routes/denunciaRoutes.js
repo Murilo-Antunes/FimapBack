@@ -2,16 +2,16 @@ const express = require("express")
 const router = express.Router()
 
 const denunciaController = require("../controller/Comunidade/Denuncia/denunciaController.js")
+const autenticar = require('../middlewares/autorization.js')
+const autorizarUsuario = require('../middlewares/autorizarUsuario.js')
+router.use(autenticar, autorizarUsuario)
 
 // Criar denúncia
 router.post("/criar", denunciaController.criarDenuncia)
 
 // Buscar denúncias
 router.get("/buscar/:id_denuncia", denunciaController.buscarDenunciaPorId)
-router.get("/listar", denunciaController.listarTodasDenuncias)
-router.get("/listar/post/:id_post", denunciaController.listarDenunciasPorPost)
 router.get("/listar/usuario/:id_usuario", denunciaController.listarDenunciasPorUsuario)
-router.get("/listar/categoria/:id_categoria", denunciaController.listarDenunciasPorCategoria)
 
 // Listar categorias de denúncia
 router.get("/categorias", denunciaController.ListarCategoriasDenuncia)

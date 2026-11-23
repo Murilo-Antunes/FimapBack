@@ -42,8 +42,7 @@ const lerParam = (req, ...nomes) => {
 // Descobre qual usuário está fazendo a requisição.
 // TEMPORÁRIO: lê o id do body ou da query.
 // Quando o login com token estiver pronto, utilize req.usuario.id.
-const idDoUsuarioLogado = (req) =>
-    Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 /* ========================= HELPERS: FORMATAÇÃO ========================= */
 

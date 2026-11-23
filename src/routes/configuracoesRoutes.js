@@ -2,6 +2,7 @@ const express = require("express")
 const router = express.Router()
 
 const configuracoesController = require("../controller/Configuracoes/ConfiguracoesController.js")
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 // router.post("/:idUsuario", configuracoesController.postConfiguracoesById)
 router.get("/:idUsuario", configuracoesController.getConfiguracoesById)
