@@ -33,21 +33,21 @@ const listarSimulacoesInvestimento = async (usuarioId, { pagina, tamanho }) => {
     return simulacoes.map(serializar)
 }
 
-const consultarSimulacaoInvestimento = async (simulacaoId, usuarioId) =>
+const consultarSimulacaoInvestimento = async (simulacaoId, usuarioId, executor = knex) =>
     serializar(
-        await knex(tabela)
+        await executor(tabela)
             .select(colunas)
             .where({ id: simulacaoId, id_usuario: usuarioId })
             .first()
     )
 
-const criarSimulacaoInvestimento = async (usuarioId, dados) => {
-    const [id] = await knex(tabela).insert({
+const criarSimulacaoInvestimento = async (usuarioId, dados, executor = knex) => {
+    const [id] = await executor(tabela).insert({
         ...dados,
         id_usuario: usuarioId,
-        data_criacao: knex.fn.now()
+        data_criacao: executor.fn.now()
     })
-    return consultarSimulacaoInvestimento(id, usuarioId)
+    return consultarSimulacaoInvestimento(id, usuarioId, executor)
 }
 
 const atualizarSimulacaoInvestimento = async (simulacaoId, usuarioId, dados) => {

@@ -1,3 +1,7 @@
+/*
+ * Lê e grava as metas financeiras no banco do FIMAP.
+ * O chat usa a listagem por usuário para montar o resumo das metas do titular.
+ */
 
 const knex = require('knex')
 
@@ -13,7 +17,7 @@ const normalizarDataAlvo = (valor) => {
 }
 
 // Criar meta
-const CreateMeta = async (meta) => {
+const CreateMeta = async (meta, { executor = knexConex, propagarErro = false } = {}) => {
     const sql = `
         INSERT INTO tbl_meta_financeira
         (
@@ -33,7 +37,7 @@ const CreateMeta = async (meta) => {
     `
 
     try {
-        const [result] = await knexConex.raw(sql, [
+        const [result] = await executor.raw(sql, [
             meta.nome,
             meta.descricao,
             meta.valor_inicio,
@@ -50,6 +54,7 @@ const CreateMeta = async (meta) => {
         return result.insertId
 
     } catch (error) {
+        if (propagarErro) throw error
         console.error('Erro ao criar meta:', error)
         return false
     }

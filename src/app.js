@@ -14,6 +14,7 @@ const metasRoutes = require('./routes/metasRoutes.js')
 const configuracoesRoutes = require('./routes/configuracoesRoutes.js')
 const badgeRoutes = require('./routes/badgeRoutes.js')
 const chatRoutes = require('./routes/chatRoutes.js')
+const recommendationRoutes = require('./routes/financialRecommendationsRoutes.js')
 const postRoutes = require('./routes/postRoutes.js')
 const comentarRoutes = require('./routes/comentarioRoutes.js')
 const denunciarRoutes = require('./routes/denunciaRoutes.js')
@@ -56,6 +57,7 @@ app.get('/health', (req, res) => res.status(200).json({ online: true, servico: '
 app.post('/v1/ia/chat-publico', limitarChat, chatPublicoController.conversarPublicamente)
 app.use('/v1/ia/chats', mensagemChatRoutes)
 app.use('/v1/ia/chat', chatRoutes)
+app.use('/v1/ia/recomendacoes', recommendationRoutes)
 app.use('/v1/openfinance', openFinanceRoutes)
 app.use('/v1/openfinance/usuario', usuarioRoutes)
 app.use('/v1/openfinance/metas', metasRoutes)
@@ -74,7 +76,10 @@ app.use('/v1/comunidade/denuncias', denunciaUsuarioRoutes)
 /* ----------------------------- Servidor ----------------------------- */
 
 if (require.main === module) {
-    const servidor = app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`))
+    const servidor = app.listen(PORT, () => {
+        console.log(`Servidor rodando na porta ${PORT}`)
+        require('./services/financialRecommendationsService.js').start()
+    })
     servidor.on('error', (erro) => {
         console.error('Erro ao subir o servidor:', erro)
         process.exit(1)

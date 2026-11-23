@@ -1,3 +1,8 @@
+/*
+ * Integra o FIMAP ao Pluggy para consultar dados de Open Finance.
+ * A coleta do chat usa este serviço para verificar o vínculo da conexão
+ * com o usuário e consultar contas, transações, investimentos e empréstimos.
+ */
 
 const pluggy = require("../config/pluggy")
 const conexaoDAO = require("../../model/DAO/OpenFinance/conexaoOpenFinanceDAO.js")
@@ -61,7 +66,8 @@ const validarItemDoUsuario = async (itemId, usuario, agora) => {
         atualizando: item.status === 'UPDATING',
         parcial: item.status !== 'UPDATED' || item.executionStatus === 'PARTIAL_SUCCESS' ||
             item.hasResourcesPendingAuthorization === true,
-        atualizadoEm: item.lastUpdatedAt ?? null
+        atualizadoEm: item.lastUpdatedAt ?? null,
+        instituicao: item.connector?.name ?? null
     }
 }
 

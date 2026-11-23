@@ -8,7 +8,7 @@ QUANDO FAZ DIFERENÇA: aponta o caminho mais curto para testar o chat e verifica
 
 API Express com MySQL, integrações financeiras e chat com IA.
 
-Use Node.js 22 ou superior:
+Use Node.js 22.13 ou superior.
 
 ```sh
 npm install
@@ -17,8 +17,8 @@ npm start
 ```
 
 O backend escuta em `http://localhost:8080`. `GET /health` verifica o processo.
-O chat público está em `POST /v1/ia/chat-publico`, e o chat com histórico em
-`POST /v1/ia/chats/:chatId/mensagens`.
+O chat público usa `POST /v1/ia/chat-publico`. O chat autenticado usa
+`POST /v1/ia/chat/mensagens` com o JWT do usuário.
 
 Veja os corpos das requisições, variáveis de ambiente, eventos SSE e requisitos do banco em
 [docs/ai-chat.md](docs/ai-chat.md). O arquivo `.env.example` documenta a configuração da IA.

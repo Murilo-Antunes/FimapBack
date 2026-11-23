@@ -3,7 +3,7 @@ const router = express.Router()
 
 const simulacaoInvestimentoController = require('../controller/Simulacoes/SimulacaoInvestimentoController.js')
 const simulacaoAmortizacaoController = require('../controller/Simulacoes/SimulacaoAmortizacaoController.js')
-const indicadoresController = require('../controller/Simulacoes/indicadoresController.js')
+const indicadoresController = require('../controller/Simulacoes/IndicadoresController.js')
 
 // Sem JWT por enquanto: as rotas de simulação recebem o dono em ?id_usuario=
 

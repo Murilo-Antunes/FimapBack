@@ -7,6 +7,7 @@ const database = () => {
     sqlite.exec(`PRAGMA foreign_keys=ON;
         CREATE TABLE tbl_usuario(id INTEGER PRIMARY KEY);
         CREATE TABLE tbl_chat(id INTEGER PRIMARY KEY, nome TEXT, data_criacao TEXT, id_usuario INTEGER REFERENCES tbl_usuario(id));
+        CREATE TABLE tbl_chat_acao (id_chat INTEGER PRIMARY KEY REFERENCES tbl_chat(id) ON DELETE CASCADE, codigo TEXT, proposta TEXT, expira_ms INTEGER);
         CREATE TABLE tbl_mensagem(id INTEGER PRIMARY KEY, conteudo TEXT NOT NULL, data_envio TEXT, papel INTEGER, id_chat INTEGER REFERENCES tbl_chat(id) ON DELETE CASCADE);
         CREATE TABLE tbl_chat_requisicao(id INTEGER PRIMARY KEY, id_usuario INTEGER REFERENCES tbl_usuario(id), id_chat INTEGER REFERENCES tbl_chat(id) ON DELETE CASCADE,
             requisicao_id TEXT, hash_pedido TEXT, pergunta TEXT, estado TEXT, chat_ativo INTEGER UNIQUE,
@@ -22,7 +23,7 @@ const database = () => {
     conn.query = (q, values, callback) => {
       try {
         state.queries.push(q.sql)
-        let sql = q.sql.replace(/ for update$/i, '').replace(/now\(\)/gi, 'CURRENT_TIMESTAMP')
+        let sql = q.sql.replace(/ (?:for update|lock in share mode)$/i, '').replace(/now\(\)/gi, 'CURRENT_TIMESTAMP')
         const bindings = (values || []).map((v) => v instanceof Date ? v.toISOString() : v)
         let rows
         if (sql.includes('as agora_ms')) rows = [{ agora_ms: state.now }]

@@ -1,6 +1,14 @@
+/*
+ * Monta o contexto financeiro do usuário autenticado para o chat.
+ * Consulta as metas no banco e os dados das conexões Open Finance autorizadas,
+ * conforme os módulos e o período identificados na conversa.
+ */
+
 const { addAbortListener } = require('node:events')
 const conexoesDAO = require('../../model/DAO/OpenFinance/conexaoOpenFinanceDAO.js')
 const metasDAO = require('../../model/DAO/Metas/MetasDAO.js')
+const investimentoDAO = require('../../model/DAO/Simulacoes/SimulacaoInvestimentoDAO.js')
+const amortizacaoDAO = require('../../model/DAO/Simulacoes/SimulacaoAmortizacaoDAO.js')
 const pluggy = require('./pluggyService.js')
 const extrato = require('./extratoCartaoService.js')
 const painel = require('./dashboardService.js')
@@ -12,6 +20,7 @@ const PRAZO_CONSULTA_MS = 8_000
 const LIMITE_CONEXOES = 12
 const LIMITE_CARTOES_POR_CONEXAO = 6
 const LIMITE_MESES_FATURA = 6
+const LIMITE_SIMULACOES_POR_TIPO = 4
 const DEPENDENCIAS_PATRIMONIO = ['contas', 'cartoes', 'investimentos', 'emprestimos']
 
 // As leituras não registram os erros brutos de SDK ou banco. Podem conter URLs, dados e credenciais.
@@ -74,7 +83,7 @@ function dataAtualizacao(valor) {
     return Number.isFinite(data.getTime()) ? data.toISOString() : null
 }
 
-async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, sinal) {
+async function lerInstituicao(conexao, ordem, usuario, origens, periodo, periodoRecente, agora, sinal) {
     const itemId = conexao.external_connection_id
     if (typeof itemId !== 'string' || !itemId) return {}
     const item = await ler(sinal, () => pluggy.validarItemDoUsuario(itemId, usuario, agora))
@@ -87,32 +96,45 @@ async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, 
     const selecionar = (resposta, prop) => resposta && !resposta.atualizando && Array.isArray(resposta[prop]) ? resposta[prop] : null
     const tarefas = {}
 
-    if (['contas', 'cartoes', 'faturas', 'movimentacao'].some((origem) => origens.has(origem))) {
+    if (['contas', 'cartoes', 'faturas', 'movimentacao', 'ultimasTransacoes'].some((origem) => origens.has(origem))) {
         const contas = ler(sinal, () => pluggy.listarContas(itemId, { preservarAusencia: true, validarVinculo: true, sinal }))
         if (origens.has('contas')) {
             tarefas.contas = contas.then((resposta) => {
                 const dados = selecionar(resposta, 'contas')?.filter((conta) => conta.tipo === 'BANK')
+                    .map((conta) => ({ ...conta, instituicao: conta.instituicao ?? item.instituicao }))
                 return registrar(dados, dados?.some((conta) => conta.saldo == null))
             })
         }
-        if (origens.has('movimentacao')) {
-            tarefas.movimentacao = contas.then(async (resposta) => {
+        if (origens.has('movimentacao') || origens.has('ultimasTransacoes')) {
+            const movimentos = contas.then(async (resposta) => {
                 const dadosContas = selecionar(resposta, 'contas')
                 if (!dadosContas) return null
                 const bancoIds = new Set(dadosContas.filter(({ tipo }) => tipo === 'BANK').map(({ id }) => id))
+                const intervalos = [
+                    ...(origens.has('movimentacao') ? [periodo] : []),
+                    ...(origens.has('ultimasTransacoes') ? [periodoRecente] : [])
+                ]
                 const transacoes = await ler(sinal, () => pluggy.listarTransacoes(itemId, {
                     resultadoContas: resposta,
-                    dateFrom: diaISO(somarDias(periodo.inicio, -1)),
-                    dateTo: diaISO(periodo.fim),
+                    dateFrom: diaISO(somarDias(new Date(Math.min(...intervalos.map(({ inicio }) => inicio))), -1)),
+                    dateTo: diaISO(new Date(Math.max(...intervalos.map(({ fim }) => fim)))),
                     permitirParcial: true,
                     validarVinculo: true,
                     sinal
                 }))
-                if (!selecionar(transacoes, 'transacoes')) return null
-                const doPeriodo = painel.filtrarTransacoesPorPeriodo(transacoes.transacoes, periodo.inicio, periodo.fim)
-                return registrar(doPeriodo.map((tx) => ({ ...tx, bancaria: bancoIds.has(tx.contaId) })),
-                    transacoes.parcial || doPeriodo.some(({ valor }) => valor == null))
+                const dados = selecionar(transacoes, 'transacoes')
+                return dados && { dados, bancoIds, parcial: transacoes.parcial }
             })
+            const recortar = async ({ inicio, fim }) => {
+                const resultado = await movimentos
+                if (!resultado) return null
+                const { dados, bancoIds, parcial } = resultado
+                const doPeriodo = painel.filtrarTransacoesPorPeriodo(dados, inicio, fim)
+                return registrar(doPeriodo.map((tx) => ({ ...tx, bancaria: bancoIds.has(tx.contaId) })),
+                    parcial || doPeriodo.some(({ valor }) => valor == null))
+            }
+            if (origens.has('movimentacao')) tarefas.movimentacao = recortar(periodo)
+            if (origens.has('ultimasTransacoes')) tarefas.ultimasTransacoes = recortar(periodoRecente)
         }
         if (origens.has('cartoes') || origens.has('faturas')) {
             const cartoes = contas.then(async (resposta) => {
@@ -203,22 +225,32 @@ async function construirContextoFinanceiro(usuario, mensagens, { sinal: sinalExt
     sinalExterno?.throwIfAborted()
     const selecao = selecionarContexto(mensagens, agora)
     if (!selecao) return null
-    const { modulos, assunto, inicio, fim } = selecao
+    const { modulos, assunto, inicio, fim, periodoExplicito } = selecao
     const periodo = { inicio, fim }
+    const hoje = new Date(agora.getTime() - 3 * 60 * 60 * 1000)
+    hoje.setUTCHours(0, 0, 0, 0)
+    const periodoRecente = periodoExplicito ? periodo : { inicio: somarDias(hoje, -89), fim: somarDias(hoje, 1) }
     const sinalPrazo = AbortSignal.timeout(PRAZO_CONSULTA_MS)
     const sinal = sinalExterno ? AbortSignal.any([sinalExterno, sinalPrazo]) : sinalPrazo
-    const origens = new Set(modulos.filter((nome) => !['patrimonio', 'metas', 'comprometimento'].includes(nome)))
+    const origens = new Set(modulos.filter((nome) => !['patrimonio', 'metas', 'comprometimento', 'nucleoFinanceiro', 'simulacoes'].includes(nome)))
     if (modulos.includes('patrimonio')) DEPENDENCIAS_PATRIMONIO.forEach((origem) => origens.add(origem))
+    if (modulos.includes('nucleoFinanceiro')) origens.add('contas')
     const movimentacaoBancaria = modulos.includes('contas') && /\b(?:movimenta\w*|extratos?|receitas?|despesas?|gastei|gastos?)\b/.test(assunto)
     if (movimentacaoBancaria) origens.add('movimentacao')
 
     const promessaMetas = modulos.includes('metas') ? ler(sinal, () => metasDAO.GetAllMetasUsuario(usuario, { propagarErro: true })) : null
+    const paginacao = { pagina: 1, tamanho: LIMITE_SIMULACOES_POR_TIPO + 1 }
+    const promessaSimulacoes = modulos.includes('simulacoes') ? Promise.all([
+        ler(sinal, () => investimentoDAO.listarSimulacoesInvestimento(usuario, paginacao)),
+        ler(sinal, () => amortizacaoDAO.listarSimulacoesAmortizacao(usuario, paginacao))
+    ]) : []
     const conexoes = origens.size ? await ler(sinal, () => conexoesDAO.listarConexoesAtivasPorUsuario(usuario, LIMITE_CONEXOES + 1)) : []
     const listaDisponivel = Array.isArray(conexoes)
     const excedeuLimite = listaDisponivel && conexoes.length > LIMITE_CONEXOES
     const instituicoes = listaDisponivel ? await mapearEmLotes(conexoes.slice(0, LIMITE_CONEXOES), 3,
-        (conexao, indice) => lerInstituicao(conexao, indice + 1, usuario, origens, periodo, agora, sinal)) : []
+        (conexao, indice) => lerInstituicao(conexao, indice + 1, usuario, origens, periodo, periodoRecente, agora, sinal)) : []
     const metas = await promessaMetas
+    const [simInvestimentos, simAmortizacoes] = await promessaSimulacoes
     sinalExterno?.throwIfAborted()
 
     const documentos = Object.fromEntries([...origens].map((origem) => [origem, combinar(instituicoes, origem, listaDisponivel, excedeuLimite)]))
@@ -227,6 +259,19 @@ async function construirContextoFinanceiro(usuario, mensagens, { sinal: sinalExt
         if (nome === 'comprometimento') continue
         if (nome === 'metas') {
             dados.metas = modulo({ disponivel: Array.isArray(metas) }, metas?.length ? projetar.metas(metas, assunto) : null, 'fimap_metas', 'posicao_atual')
+            continue
+        }
+        if (nome === 'simulacoes') {
+            const leitura = { disponivel: Boolean(simInvestimentos || simAmortizacoes), parcial: !simInvestimentos || !simAmortizacoes }
+            const resultado = projetar.simulacoes(simInvestimentos, simAmortizacoes, LIMITE_SIMULACOES_POR_TIPO)
+            dados.simulacoes = modulo(leitura, leitura.disponivel ? resultado : null, 'fimap_simulacoes', 'posicao_atual')
+            if (leitura.disponivel && !resultado.detalhes.length && !leitura.parcial) dados.simulacoes.estado = 'sem_dados'
+            continue
+        }
+        if (nome === 'nucleoFinanceiro') {
+            const leitura = documentos.contas
+            dados.nucleoFinanceiro = modulo(leitura, leitura.dados.length ? projetar.nucleoFinanceiro(leitura.dados) : null,
+                'open_finance', 'posicao_atual')
             continue
         }
         if (nome === 'patrimonio') {
@@ -246,10 +291,13 @@ async function construirContextoFinanceiro(usuario, mensagens, { sinal: sinalExt
         const resultado = nome === 'contas'
             ? projetar.contas(itens, transacoes?.disponivel ? transacoes.dados.filter((tx) => tx.bancaria) : null)
             : projetar[nome](itens, periodo)
-        const referencia = ['movimentacao', 'faturas'].includes(nome) ? 'periodo' :
+        const referencia = ['movimentacao', 'faturas', 'ultimasTransacoes'].includes(nome) ? 'periodo' :
             nome === 'emprestimos' || (nome === 'contas' && movimentacaoBancaria) ? 'posicao_atual_e_periodo' : 'posicao_atual'
         if (nome === 'contas' && transacoes && (!transacoes.disponivel || transacoes.parcial)) leitura.parcial = true
         dados[nome] = modulo(leitura, itens.length ? resultado : null, 'open_finance', referencia)
+        if (nome === 'ultimasTransacoes') {
+            dados[nome].periodo = { inicio: diaISO(periodoRecente.inicio), fimExclusivo: diaISO(periodoRecente.fim) }
+        }
     }
 
     if (modulos.includes('comprometimento')) {

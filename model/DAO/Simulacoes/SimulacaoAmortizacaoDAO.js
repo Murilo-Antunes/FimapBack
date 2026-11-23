@@ -34,18 +34,18 @@ const listarSimulacoesAmortizacao = async (usuarioId, { pagina, tamanho }) => {
     return registros.map(serializar)
 }
 
-const consultarSimulacaoAmortizacao = async (simulacaoId, usuarioId) =>
+const consultarSimulacaoAmortizacao = async (simulacaoId, usuarioId, executor = knex) =>
     serializar(
-        await knex(tabela).select(colunas).where({ id: simulacaoId, id_usuario: usuarioId }).first()
+        await executor(tabela).select(colunas).where({ id: simulacaoId, id_usuario: usuarioId }).first()
     )
 
-const criarSimulacaoAmortizacao = async (usuarioId, dados) => {
-    const [id] = await knex(tabela).insert({
+const criarSimulacaoAmortizacao = async (usuarioId, dados, executor = knex) => {
+    const [id] = await executor(tabela).insert({
         ...dados,
         id_usuario: usuarioId,
-        data_criacao: knex.fn.now()
+        data_criacao: executor.fn.now()
     })
-    return consultarSimulacaoAmortizacao(id, usuarioId)
+    return consultarSimulacaoAmortizacao(id, usuarioId, executor)
 }
 
 const atualizarSimulacaoAmortizacao = async (simulacaoId, usuarioId, dados) => {

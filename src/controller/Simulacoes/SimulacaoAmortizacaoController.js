@@ -98,6 +98,7 @@ const removerSimulacaoAmortizacao = executar(async (req, res, usuarioId) => {
 })
 
 module.exports = {
+    validarDados,
     listarSimulacoesAmortizacao,
     criarSimulacaoAmortizacao,
     consultarSimulacaoAmortizacao,

@@ -1,6 +1,17 @@
+/*
+ * Define quais módulos financeiros consultar e qual período usar a partir
+ * da pergunta e do histórico recente. Um acompanhamento como "E no mês
+ * passado?" pode reaproveitar o assunto da pergunta anterior.
+ */
+
 const DIA_MS = 86_400_000
 const MESES = 'janeiro fevereiro marco abril maio junho julho agosto setembro outubro novembro dezembro'.split(' ')
 const MES_NOME = new RegExp(`\\b(${MESES.join('|')})(?: de (20\\d{2}))?\\b`)
+const PANORAMA_FINANCEIRO = [
+    'patrimonio', 'movimentacao', 'contas', 'cartoes', 'faturas',
+    'investimentos', 'metas', 'emprestimos', 'comprometimento',
+    'nucleoFinanceiro', 'ultimasTransacoes', 'simulacoes'
+]
 
 const normalizarTexto = (texto) => texto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 const diaISO = (data) => data.toISOString().slice(0, 10)
@@ -49,24 +60,30 @@ function selecionarPeriodo(texto, agora) {
 }
 
 function selecionarModulos(texto) {
+    if (/\b(?:minhas financas|(?:minha|meu)\s+(?:situacao|panorama|resumo|diagnostico|saude)\s+financeir[oa]|(?:panorama|resumo|visao geral|diagnostico)\s+(?:(?:das|de todas as)\s+minhas financas|financeir[oa])|todos os meus dados financeiros)\b/.test(texto))
+        return PANORAMA_FINANCEIRO.slice()
+
     const modulos = []
     if (/\b(?:patrimonio|riqueza liquida|balanco patrimonial)\b/.test(texto)) modulos.push('patrimonio')
     if (/\b(?:receitas?|despesas?|entradas?|saidas?|salario\w*|rend[ai]s?|fluxo de caixa|gastei|recebi|ganhei|gastos?)\b/.test(texto))
         modulos.push('movimentacao')
-    if (/\b(?:contas?|saldos? bancarios?|extratos?|movimenta\w*)\b/.test(texto))
+    if (/\b(?:transac\w*|lancamentos?|(?:ultimas?|recentes)\s+(?:compras?|movimentacoes?))\b/.test(texto))
+        modulos.push('ultimasTransacoes')
+    if (/\b(?:nucleo financeiro|bancos? conectados?|instituicoes? (?:conectadas?|financeiras?))\b/.test(texto))
+        modulos.push('nucleoFinanceiro')
+    if (/\bsimulac\w*\b/.test(texto)) modulos.push('simulacoes')
+    if (/\b(?:contas?|saldos? bancarios?|extratos?|movimenta\w*|(?:tenho|dinheiro|saldo) no banco)\b/.test(texto))
         modulos.push('contas')
     if (/\b(?:cartao|cartoes|limite)\b/.test(texto)) modulos.push('cartoes')
     if (/\bfaturas?\b/.test(texto) || (modulos.includes('cartoes') && /\b(?:gastos?|gastei|compras?|extrato|parcelas?)\b/.test(texto)))
         modulos.push('faturas')
-    if (/\b(?:investiment\w*|carteira|ativos?|rendimentos?|aplica\w*)\b/.test(texto)) modulos.push('investimentos')
+    if (/\b(?:investiment\w*|investid[oa]s?|investi|carteira|ativos?|rendimentos?|aplica\w*)\b/.test(texto)) modulos.push('investimentos')
     if (/\b(?:metas?|objetivos?|reserva de emergencia)\b/.test(texto)) modulos.push('metas')
     if (/\b(?:emprestim\w*|financiam\w*|dividas?|devedor|amortiza\w*)\b/.test(texto) ||
         (!modulos.includes('faturas') && /\bparcelas?\b/.test(texto))) modulos.push('emprestimos')
     if (/\bcompromet\w*\b/.test(texto) && (modulos.includes('movimentacao') || /\borcamento\b/.test(texto)))
         modulos.push('comprometimento', 'movimentacao', 'faturas', 'emprestimos')
     if (!modulos.length && /\bsaldos?\b/.test(texto)) modulos.push('contas')
-    if (/\b(?:minha|meu|minhas|meus)\s+(?:situacao|panorama|resumo) financeir[oa]\b/.test(texto))
-        modulos.push('patrimonio', 'movimentacao', 'faturas', 'metas', 'emprestimos')
     return [...new Set(modulos)]
 }
 
@@ -96,7 +113,7 @@ function selecionarContexto(mensagens, agora) {
     if (!modulos.length) return null
 
     const periodo = periodoAtual || ultimoPeriodo || selecionarPeriodo('este mes', agora)
-    return { modulos, assunto, inicio: periodo[0], fim: periodo[1] }
+    return { modulos, assunto, inicio: periodo[0], fim: periodo[1], periodoExplicito: Boolean(periodoAtual || ultimoPeriodo) }
 }
 
 module.exports = { selecionarContexto, normalizarTexto, diaISO, somarDias }
