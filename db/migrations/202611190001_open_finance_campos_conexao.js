@@ -1,3 +1,5 @@
+// Acrescenta o nome da instituição e o percentual de CDI manual às conexões
+// do Open Finance. Cada coluna é criada somente quando está ausente.
 const tabela = 'tbl_conexao_open_finance'
 
 exports.up = async (knex) => {

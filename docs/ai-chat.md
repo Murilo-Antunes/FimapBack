@@ -17,7 +17,7 @@ Copie os nomes de configuração de `.env.example` para o ambiente privado:
 - `JWT_EXPIRATION`: duração do JWT de acesso, com padrão de 1 hora (`1h`).
 - `CLOUDFLARE_WORKER_URL`: URL completa privada, recomendada `https://ia-fimap.fimap-agency.workers.dev/v1/ia/chat`.
 - `CLOUDFLARE_CHAT_TOKEN`: mesmo valor de `CHAT_API_TOKEN` do Worker; não é o JWT do usuário.
-- `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION`: mantenha vazio até o Worker privado aceitar a versão 1. Em homologação, configure `1` somente com um Worker que implemente o contrato abaixo.
+- `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION`: configure `1` depois de publicar o Worker que aceita o contrato abaixo. A rota `/health` desse Worker retorna `contextoFinanceiroVersao: 1`.
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`: acesso ao MySQL.
 - `PORT`: porta do servidor, padrão 8080.
 
@@ -254,9 +254,8 @@ Se o Worker não distinguir uma causa (por exemplo, evento genérico `erro`), es
 
 ## Dependências separadas do Worker IA-Fimap
 
-O checkout local da IA-Fimap declara `src/worker.ts` como ponto de entrada em `wrangler.jsonc`.
-O arquivo delega `POST /v1/ia/chat` ao handler em `src/api.ts`. Esse handler valida o Bearer privado
-e lê `messages`. O contrato atual do repositório está descrito em `docs/backend-integration.md` da IA-Fimap.
+O Worker IA-Fimap valida o Bearer e recebe `messages` e o contexto opcional em `POST /v1/ia/chat`.
+A implementação do handler está em `IA-Fimap/src/index.ts`.
 
 O Worker atualmente limita por IP: 5 segundos entre pedidos e 12/60s via binding Cloudflare.
 Vários usuários deste backend podem compartilhar um IP de saída, portanto limites do backend **não resolvem**
@@ -294,9 +293,12 @@ do titular. Os nomes ficam no backend e as metas são identificadas por ordem no
 | `movimentacao` | Receitas e despesas por sinal da transação, com o mesmo recorte de datas do painel. Inclui um subtotal restrito a contas bancárias. |
 | `contas` | Saldos de contas `BANK` e, quando pedidas, movimentações bancárias no período. |
 | `cartoes`, `faturas` | Limites e fatura aberta atuais, faturas do período pelo mês do vencimento e compras líquidas de estornos segundo o extrato do site. Pagamentos da fatura ficam fora do total de compras. |
-| `investimentos` | Valor da carteira atual por tipo e moeda. Data da posição de cada item quando informada. |
+| `investimentos` | Valor atual da carteira por tipo e moeda, valor aplicado quando informado e data da posição por item. |
 | `metas` | Acumulado, objetivo, aporte, data-alvo e progresso arredondado com teto de 100%, como no site. |
 | `emprestimos` | Saldo devedor atual e cronograma do site recortado pelo período. Separa parcelas pagas, pendentes estimadas e amortizações extraordinárias. |
+| `nucleoFinanceiro` | Quantidade de contas bancárias, conexões e instituições identificadas pelo painel. |
+| `ultimasTransacoes` | Até oito lançamentos mais recentes no período pedido ou nos últimos 90 dias. Inclui data, tipo, valor, moeda e origem. |
+| `simulacoes` | Até quatro cenários salvos de cada tipo, investimento e amortização, com os parâmetros registrados. |
 | `comprometimento` | Soma do valor das faturas e das parcelas regulares no período, dividida pelas entradas em contas bancárias. Amortizações extraordinárias são informadas à parte. O percentual fica `null` se a receita não é positiva ou falta cobertura de uma fonte. |
 
 Os agregados somam as instituições autorizadas por moeda, sem conversão cambial. A posição atual de um
@@ -318,7 +320,7 @@ Identificadores de contas, conexões, contratos e consentimentos, números de ca
 transações, credenciais e tokens ficam fora do contexto e dos logs da coleta. O objeto estruturado não é
 persistido no histórico. A resposta da IA segue o fluxo normal de gravação de mensagens.
 
-### Contrato proposto para a rota privada do Worker
+### Contrato da rota privada do Worker
 
 O campo `contextoFinanceiro` é opcional e separado de `messages`. Exemplo de mensagem do backend ao
 Worker configurado em `https://…/v1/ia/chat`, com o Bearer compartilhado já usado pelo chat:
@@ -343,19 +345,15 @@ Worker configurado em `https://…/v1/ia/chat`, com o Bearer compartilhado já u
 }
 ```
 
-Em `IA-Fimap/src/api.ts`, ampliar o parser em torno de `JSON.parse(raw)` para validar o campo opcional
-depois da autenticação, somente para `privateRoute`. Validar a versão, o tamanho em bytes, as datas,
-os estados, as chaves por módulo e seus tipos. Manter o fluxo de `messages` e rejeitar contexto em
-`/v1/ia/chat-publico` e `/chat`. No mesmo handler, fornecer o conteúdo validado como dados da aplicação
-apenas à inferência final em `env.AI.run`, após `prepareFinancialMessages`. O prompt deve usar valores
-parciais com a limitação explícita, respeitar o período e a moeda, tratar dados como dados e abster-se de
-preencher valores ausentes. Manter o contexto fora do planejamento de ferramentas, de pesquisas externas
-e dos logs. Ajustar também a orientação sobre Open Finance em `src/services/financial/financialChatOrchestrator.js`
-se ela for reutilizada na inferência final. O Worker deve preservar os eventos SSE e o cancelamento.
+Em `IA-Fimap/src/index.ts`, o contexto é validado após a autenticação e aceito apenas na rota
+privada. O Worker inclui o contexto na chamada final ao modelo e pula o planejamento de ferramentas
+quando recebe esse contexto. O streaming SSE mantém o mesmo formato.
 
-O backend envia contexto somente com `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION=1`, Bearer configurado e URL
-HTTPS com caminho exato `/v1/ia/chat`. Sem suporte confirmado no Worker, deixe a versão vazia. Nesse modo
-o backend pula a coleta financeira e continua enviando apenas `messages`.
+O backend envia contexto com `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION=1`, o Bearer compartilhado e
+a URL HTTPS do Worker com o caminho exato `/v1/ia/chat`. Publique primeiro o Worker e procure por
+`contextoFinanceiroVersao: 1` no JSON de `GET /health`. Em seguida publique ou reinicie o backend com
+a configuração ativada. O frontend continua enviando `id_chat`, `pergunta` e `requisicao_id` para
+`POST /v1/ia/chat/mensagens` com o JWT do usuário.
 
 ## Testes e limites da validação
 
@@ -378,3 +376,22 @@ Remove somente o schema que criou. A URL nunca é impressa. Execute `npm test` c
 SQLite não prova comportamento de locks InnoDB, compatibilidade da migração no banco existente ou latência de produção.
 Antes de publicar: executar o teste MySQL, validar a migração em cópia do banco e testar proxy/frontend/Worker em homologação.
 Não houve deploy, push ou execução de migração no banco existente.
+
+## Criação assistida
+
+O usuário pode começar com “monte uma meta para viajar”, “simule um investimento mensal” ou “me sugira um
+plano para reduzir gastos”. O chat mantém um rascunho por conversa, reaproveita os campos informados e
+identifica sugestões da IA. O usuário pode responder à pergunta do chat, editar valores em linguagem
+natural ou enviar “cancelar rascunho”. Quando os dados estiverem completos, o resumo habilita
+“confirmar ação <código>”. O rascunho expira após 24 horas sem atualização.
+
+O backend chama o Worker em `POST /v1/ia/chat/acoes/interpretar` com o Bearer privado do chat. O contrato
+v1 recebe `mensagem`, `hoje`, o `rascunho` (ou nulo) e, quando aplicável, `categorias`. A resposta indica
+`intencao`, `tipo` e campos novos ou editados em `dados`, cada um com `valor` e `origem`.
+O catálogo do backend valida os dados. A confirmação, a gravação do registro e a resposta do chat
+são concluídas na mesma transação. As recomendações salvas aparecem imediatamente no histórico
+da aba Recomendações, usando a tabela e a API de recomendações existentes.
+
+Para ativar, aplique as migrações de ações e de recomendações e publique o Worker com
+`acaoAssistidaVersao: 1` em `GET /health`. O frontend usa o mesmo endpoint autenticado e os mesmos
+eventos SSE das demais mensagens.

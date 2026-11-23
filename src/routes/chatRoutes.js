@@ -1,3 +1,9 @@
+/*
+ * Define as rotas autenticadas de conversas do FIMAP.
+ * Encaminha o envio de perguntas, a consulta do histórico e o acompanhamento
+ * das requisições ao controlador de mensagens.
+ */
+
 const express = require("express");
 const router = express.Router();
 

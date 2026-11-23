@@ -1,8 +1,15 @@
+/*
+ * Coordena a geração da resposta no chat autenticado. Recupera o histórico
+ * recente, solicita o contexto financeiro quando habilitado e envia os dados
+ * ao serviço da IA. Também acompanha o estado de cada requisição.
+ */
+
 const { createHash, randomUUID } = require('node:crypto')
 const dao = require('../../model/DAO/MensagemChat/RequisicaoChatDAO.js')
 const { formatarMensagem } = require('../../model/DAO/MensagemChat/MensagemChatDAO.js')
 const ia = require('./aiChatService.js')
 const financeiro = require('./financialContextService.js')
+const acoesFinanceiras = require('./chatFinancialActions.js')
 const { criarErro, validarMensagens } = require('./chatValidation.js')
 
 const erroEstado = (r) => criarErro(r.status_erro || 409,
@@ -54,6 +61,20 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
     timer = setTimeout(verificar, 1000)
     try {
         combinado.throwIfAborted()
+        const acao = await acoesFinanceiras.prepararAcao(r, dao, combinado)
+        if (acao) {
+            combinado.throwIfAborted()
+            let concluida
+            try {
+                concluida = await dao.concluir(r, acao)
+            } catch (erro) {
+                if (erro.statusCode) throw erro
+                throw criarErro(503, 'Não foi possível concluir a ação. Confira a conversa e tente novamente.', 'CHAT_ACAO_INDISPONIVEL')
+            }
+            const salvo = await resultado(concluida)
+            await trecho(salvo.mensagem_assistente.conteudo)
+            return salvo
+        }
         const config = ia.obterConfiguracaoPrivada()
         const contexto = validarMensagens([...(await dao.contexto(r)), { role: 'user', content: pergunta }])
         let contextoFinanceiro

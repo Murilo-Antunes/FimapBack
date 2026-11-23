@@ -8,6 +8,8 @@ const { load, sse } = require('./helpers/chatHarness.js')
 const financeiro = require('../src/services/financialContextService.js')
 const conexoesDAO = require('../model/DAO/OpenFinance/conexaoOpenFinanceDAO.js')
 const metasDAO = require('../model/DAO/Metas/MetasDAO.js')
+const investimentoDAO = require('../model/DAO/Simulacoes/SimulacaoInvestimentoDAO.js')
+const amortizacaoDAO = require('../model/DAO/Simulacoes/SimulacaoAmortizacaoDAO.js')
 const pluggy = require('../src/services/pluggyService.js')
 const extrato = require('../src/services/extratoCartaoService.js')
 const ia = require('../src/services/aiChatService.js')
@@ -46,6 +48,14 @@ function simularFontes(t, db, sqlite) {
             id INTEGER PRIMARY KEY, id_usuario INTEGER, nome TEXT, descricao TEXT, valor_inicio REAL, valor_desejado REAL,
             valor_total REAL, aporte_mensal REAL, data_alvo TEXT, status INTEGER, id_categoria INTEGER, id_conta_vinculada INTEGER
         );
+        CREATE TABLE tbl_simulacao_investimento (
+            id INTEGER PRIMARY KEY, id_usuario INTEGER, nome TEXT, descricao TEXT, valor_inicial REAL,
+            aporte_mensal REAL, prazo INTEGER, rentabilidade REAL, data_criacao TEXT
+        );
+        CREATE TABLE tbl_simulacao_amortizacao (
+            id INTEGER PRIMARY KEY, id_usuario INTEGER, nome TEXT, descricao TEXT, saldo_devedor REAL,
+            prazo INTEGER, taxa REAL, sistema_calculo TEXT, aporte_mensal REAL, modalidade TEXT, data_criacao TEXT
+        );
     `)
     const inserir = sqlite.prepare('INSERT INTO tbl_conexao_open_finance VALUES (?, ?, ?, ?, ?, NULL)')
     inserir.run(1, ids.a, 3, 1, 'pluggy')
@@ -58,18 +68,27 @@ function simularFontes(t, db, sqlite) {
             (1, 3, 'Reserva', 'segredo-na-descricao', 0, 100, 25, 10, '2027-03-01', 1, 2, 1),
             (2, 4, 'Meta de outro usuário', '', 0, 5000, 4321, 250, '2028-01-01', 1, 2, 3),
             (3, 5, 'Curso', '', 0, 50, 0, 10, '2027-03-01', 1, 2, NULL);
+        INSERT INTO tbl_simulacao_investimento VALUES
+            (1, 3, 'Cenário de investimento', 'descrição protegida', 1000, 50, 24, 10, '2026-11-01'),
+            (2, 4, 'Simulação de outro usuário', '', 90000, 1000, 12, 10, '2026-11-02');
+        INSERT INTO tbl_simulacao_amortizacao VALUES
+            (1, 3, 'Cenário SAC', '', 20000, 60, 12, 'SAC', 100, 'REDUZIR_PRAZO', '2026-11-02');
     `)
     const conexoes = load('model/DAO/OpenFinance/conexaoOpenFinanceDAO.js', { knex: () => db })
     const metas = load('model/DAO/Metas/MetasDAO.js', { knex: () => db })
     t.mock.method(conexoesDAO, 'listarConexoesAtivasPorUsuario', conexoes.listarConexoesAtivasPorUsuario)
     t.mock.method(metasDAO, 'GetAllMetasUsuario', metas.GetAllMetasUsuario)
+    const investimentos = load('model/DAO/Simulacoes/SimulacaoInvestimentoDAO.js', { knex: () => db })
+    const amortizacoes = load('model/DAO/Simulacoes/SimulacaoAmortizacaoDAO.js', { knex: () => db })
+    t.mock.method(investimentoDAO, 'listarSimulacoesInvestimento', investimentos.listarSimulacoesInvestimento)
+    t.mock.method(amortizacaoDAO, 'listarSimulacoesAmortizacao', amortizacoes.listarSimulacoesAmortizacao)
 
     const donos = { [ids.a]: '3', [ids.b]: '3', [ids.c]: '4' }
     const checagens = []
     const pluggyComDono = load('src/services/pluggyService.js', {
         '../config/pluggy': { async fetchItem(id) {
             checagens.push(id)
-            return { id, clientUserId: donos[id], status: 'UPDATED', lastUpdatedAt: atualizadoEm,
+            return { id, clientUserId: donos[id], status: 'UPDATED', lastUpdatedAt: atualizadoEm, connector: { name: 'Banco Teste' },
                 parameter: { password: 'credencial-privada-do-banco' } }
         } }
     })
@@ -222,6 +241,31 @@ test('chat autenticado monta e envia contexto v1, isola usuários, consolida ban
     assert.equal(panorama.modulos.metas.dados.detalhes[0].progressoPercentual, 25)
     assert.equal(panorama.modulos.metas.dados.selecionadasPorNome, true)
     assert.equal(JSON.stringify(panorama).includes('segredo-na-descricao'), false)
+
+    const visaoGeral = await enviarNova(3, 9, 'Como estão minhas finanças?')
+    assert.deepEqual(Object.keys(visaoGeral.modulos).sort(), [
+        'cartoes', 'comprometimento', 'contas', 'emprestimos', 'faturas',
+        'investimentos', 'metas', 'movimentacao', 'nucleoFinanceiro', 'patrimonio', 'simulacoes', 'ultimasTransacoes'
+    ])
+    assert.deepEqual(visaoGeral.modulos.nucleoFinanceiro.dados.detalhes, ['Banco Teste'])
+    assert.equal(visaoGeral.modulos.nucleoFinanceiro.dados.quantidadeContas, 2)
+    assert.equal(visaoGeral.modulos.movimentacao.dados.porMoedaContasBancarias[0].receitas, 1500)
+    assert.equal(visaoGeral.modulos.ultimasTransacoes.dados.detalhes.at(-1).data, '2026-10-31')
+    assert.equal(visaoGeral.modulos.ultimasTransacoes.periodo.fimExclusivo, '2026-11-22')
+    assert.deepEqual(visaoGeral.modulos.simulacoes.dados.detalhes.map(({ nome }) => nome), [
+        'Cenário de investimento', 'Cenário SAC'
+    ])
+    assert.doesNotMatch(JSON.stringify(visaoGeral), /descrição protegida|transacao-privada|Simulação de outro usuário/)
+
+    const transacoes = await enviarNova(3, 9, 'Quais foram minhas transações no mês passado?')
+    assert.deepEqual(Object.keys(transacoes.modulos), ['ultimasTransacoes'])
+    assert.deepEqual(transacoes.modulos.ultimasTransacoes.periodo, { inicio: '2026-10-01', fimExclusivo: '2026-11-01' })
+    assert.equal(transacoes.modulos.ultimasTransacoes.dados.detalhes.at(-1).data, '2026-10-10')
+
+    const consultasAntesDasSimulacoes = fontes.checagens.length
+    const simulacoes = await enviarNova(3, 9, 'Quais são minhas simulações salvas?')
+    assert.deepEqual(Object.keys(simulacoes.modulos), ['simulacoes'])
+    assert.equal(fontes.checagens.length, consultasAntesDasSimulacoes)
 
     const outro = await enviarNova(4, 8, 'Qual meu saldo bancário e minhas metas?')
     assert.equal(outro.modulos.contas.dados.porMoeda[0].saldo, 99999)

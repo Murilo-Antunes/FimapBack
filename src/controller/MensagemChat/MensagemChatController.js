@@ -1,3 +1,9 @@
+/*
+ * Recebe a pergunta do frontend, valida a conversa e a mensagem e obtém a
+ * identidade do usuário autenticado. Chama o serviço de chat e transmite
+ * os trechos da resposta ao frontend via SSE.
+ */
+
 const { randomUUID } = require('node:crypto')
 const dao = require('../../../model/DAO/MensagemChat/MensagemChatDAO.js')
 const service = require('../../services/chatRequestService.js')

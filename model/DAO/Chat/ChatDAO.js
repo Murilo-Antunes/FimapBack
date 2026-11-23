@@ -5,12 +5,24 @@
  */
 
 const db = require('../../Database_config_knex/connection.js')
+const { criarErro } = require('../../../src/services/chatValidation.js')
 
-const insertChat = async (nome, id_usuario) => {
-    const [result] = await db.raw(
+const LIMITE_CHATS_POR_USUARIO = 20
+
+const insertChat = (nome, id_usuario) => db.transaction(async (trx) => {
+    // O bloqueio por usuário serializa criações em todas as instâncias do backend.
+    const usuario = await trx('tbl_usuario').where('id', id_usuario).select('id').forUpdate().first()
+    if (!usuario) throw criarErro(404, 'Usuário não encontrado.', 'USUARIO_NAO_ENCONTRADO')
+
+    const { quantidade } = await trx('tbl_chat').where({ id_usuario }).count({ quantidade: '*' }).first()
+    if (Number(quantidade) >= LIMITE_CHATS_POR_USUARIO) {
+        throw criarErro(409, `Limite de ${LIMITE_CHATS_POR_USUARIO} chats atingido. Apague um chat para criar outro.`, 'CHAT_LIMITE_USUARIO')
+    }
+
+    const [result] = await trx.raw(
         'insert into tbl_chat (nome, data_criacao, id_usuario) values (?, now(), ?);', [nome, id_usuario])
     return result.insertId
-}
+})
 
 // O id também é retornado para os controllers conseguirem referenciar o chat.
 const GetChatById = async (id_chat, id_usuario) => {

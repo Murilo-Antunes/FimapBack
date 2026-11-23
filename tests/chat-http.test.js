@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt')
 const { database } = require('./helpers/chatDatabase.js')
 
 test('rotas HTTP reais: login, JWT, isolamento, histórico, SSE, recuperação, validação e limites', async (t) => {
-    const { db, state } = database()
+    const { db, state, sqlite } = database()
     const connectionPath = require.resolve('../model/Database_config_knex/connection.js')
     require.cache[connectionPath] = { id: connectionPath, filename: connectionPath, loaded: true, exports: db }
     const saved = Object.fromEntries(['JWT_SECRET', 'JWT_EXPIRATION', 'CLOUDFLARE_WORKER_URL', 'CLOUDFLARE_CHAT_TOKEN'].map((key) => [key, process.env[key]]))
@@ -177,6 +177,25 @@ test('rotas HTTP reais: login, JWT, isolamento, histórico, SSE, recuperação, 
         }
         assert.equal(limited, true)
         assert.equal(providerCalls, 2)
+
+        const inserirChat = sqlite.prepare("INSERT INTO tbl_chat (nome, data_criacao, id_usuario) VALUES (?, '2026-01-01', 3)")
+        for (let i = 3; i < 19; i++) inserirChat.run(`Chat ${i + 1}`)
+        const criacoes = await Promise.all([
+            request('/v1/ia/chat/iniciar-chat', { nome: 'Última vaga' }),
+            request('/v1/ia/chat/iniciar-chat/3', { nome: 'Criação simultânea' })
+        ])
+        assert.deepEqual(criacoes.map(({ status }) => status).sort(), [201, 409])
+        const bloqueada = await criacoes.find(({ status }) => status === 409).json()
+        assert.equal(bloqueada.codigo, 'CHAT_LIMITE_USUARIO')
+        assert.equal(state.chats.filter(({ id_usuario }) => id_usuario === 3).length, 20)
+
+        result = await request('/v1/ia/chat/iniciar-chat', { nome: 'Outra conta' }, 'POST', 4)
+        assert.equal(result.status, 201)
+        const ultimoChat = await criacoes.find(({ status }) => status === 201).json()
+        result = await request('/v1/ia/chat/apagar-chat/' + ultimoChat.id, undefined, 'DELETE')
+        assert.equal(result.status, 200)
+        result = await request('/v1/ia/chat/iniciar-chat', { nome: 'Vaga liberada' })
+        assert.equal(result.status, 201)
     } finally {
         global.fetch = nativeFetch
         for (const [key, value] of Object.entries(saved)) {

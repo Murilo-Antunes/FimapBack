@@ -3,8 +3,7 @@ const router = express.Router()
 
 const simulacaoInvestimentoController = require('../controller/Simulacoes/SimulacaoInvestimentoController.js')
 const simulacaoAmortizacaoController = require('../controller/Simulacoes/SimulacaoAmortizacaoController.js')
-const indicadoresController = require('../controller/Simulacoes/indicadoresController.js')
-router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
+const indicadoresController = require('../controller/Simulacoes/IndicadoresController.js')
 
 // As operações usam o ID autenticado pelo JWT, nunca o ID informado pelo cliente.
 

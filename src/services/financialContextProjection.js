@@ -1,3 +1,9 @@
+/*
+ * Transforma os dados consultados em totais e detalhes selecionados para a IA.
+ * Reaproveita os cálculos do painel e do extrato para manter os valores
+ * de receitas, despesas e faturas alinhados aos exibidos no site.
+ */
+
 const painel = require('./dashboardService.js')
 const { somarFatura, dataISO10 } = require('./extratoCartao/extratoCartaoMapper.js')
 const { diaISO, normalizarTexto } = require('./financialContextSelection.js')
@@ -50,16 +56,59 @@ function contas(contasBancarias, transacoes) {
 }
 
 function movimentacao(transacoes) {
-    const recentes = [...transacoes].sort((a, b) => new Date(b.data) - new Date(a.data))
     return {
         porMoeda: porMoeda(transacoes, movimentos),
         porMoedaContasBancarias: porMoeda(transacoes.filter((transacao) => transacao.bancaria), movimentos),
-        ...detalhes(recentes, (transacao) => ({
-            data: diaISO(painel.obterDataBrasilia(transacao)),
-            tipo: painel.obterTipoTransacao(transacao),
-            valor: arredondar(numero(transacao.valor)),
-            moeda: moedaDe(transacao)
-        }))
+        ...ultimasTransacoes(transacoes)
+    }
+}
+
+function ultimasTransacoes(transacoes) {
+    const recentes = painel.obterUltimasTransacoes(transacoes, LIMITE_DETALHES + 1)
+    return detalhes(recentes, (transacao) => ({
+        data: diaISO(painel.obterDataBrasilia(transacao)),
+        tipo: painel.obterTipoTransacao(transacao),
+        valor: arredondar(numero(transacao.valor)),
+        moeda: moedaDe(transacao),
+        origem: transacao.bancaria ? 'conta_bancaria' : 'outro_produto'
+    }))
+}
+
+function nucleoFinanceiro(contas) {
+    const nucleo = painel.calcularNucleoFinanceiro(contas)
+    return {
+        quantidadeContas: nucleo.quantidadeContas,
+        quantidadeInstituicoes: nucleo.instituicoes.length,
+        quantidadeConexoesBancarias: new Set(contas.map(({ instituicaoOrdem }) => instituicaoOrdem)).size,
+        ...detalhes(nucleo.instituicoes, (nome) => String(nome).slice(0, 80))
+    }
+}
+
+function simulacoes(investimentos, amortizacoes, limitePorTipo) {
+    const base = (item) => ({
+        nome: String(item.nome ?? '').slice(0, 45),
+        aporteMensal: numero(item.aporte_mensal),
+        prazoMeses: numero(item.prazo),
+        criacao: dataCivil(item.data_criacao)
+    })
+    return {
+        fontes: {
+            investimentos: investimentos ? (investimentos.length ? 'ok' : 'sem_dados') : 'indisponivel',
+            amortizacoes: amortizacoes ? (amortizacoes.length ? 'ok' : 'sem_dados') : 'indisponivel'
+        },
+        detalhes: [
+            ...(investimentos ?? []).slice(0, limitePorTipo).map((item) => ({
+                tipo: 'investimento', ...base(item), valorInicial: numero(item.valor_inicial),
+                rentabilidadeAnualPercentual: numero(item.rentabilidade)
+            })),
+            ...(amortizacoes ?? []).slice(0, limitePorTipo).map((item) => ({
+                tipo: 'amortizacao', ...base(item), saldoDevedor: numero(item.saldo_devedor),
+                taxaAnualPercentual: numero(item.taxa),
+                sistema: codigoSeguro(item.sistema_calculo, ['SAC', 'PRICE']),
+                modalidade: codigoSeguro(item.modalidade, ['REDUZIR_PRAZO', 'REDUZIR_PARCELA'])
+            }))
+        ],
+        detalhesTruncados: [investimentos, amortizacoes].some((itens) => itens?.length > limitePorTipo)
     }
 }
 
@@ -125,6 +174,7 @@ function investimentos(itens) {
             return {
                 quantidade: resumo.quantidade,
                 valorAtual: totalConhecido(grupo, 'valor'),
+                valorAplicado: totalConhecido(grupo, 'valorAplicado'),
                 porTipo: Object.fromEntries(Object.keys(resumo.porCategoria).map((tipo) => [tipo,
                     totalConhecido(grupo.filter((item) => item.tipo === tipo), 'valor')]))
             }
@@ -240,4 +290,4 @@ function comprometimento(movimentos, contasCartao, emprestimosPeriodo) {
     }
 }
 
-module.exports = { contas, movimentacao, cartoes, faturas, faturaDoPeriodo, investimentos, emprestimos, patrimonio, metas, comprometimento }
+module.exports = { contas, movimentacao, ultimasTransacoes, nucleoFinanceiro, simulacoes, cartoes, faturas, faturaDoPeriodo, investimentos, emprestimos, patrimonio, metas, comprometimento }

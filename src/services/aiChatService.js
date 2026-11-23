@@ -1,7 +1,8 @@
 /*
- * PARA QUE SERVE: Conversa com a IA da Cloudflare: envia a pergunta e recebe a resposta.
- * QUANDO ENTRA EM AÇÃO: É usado pelos dois tipos de chat quando precisam gerar uma resposta.
- * QUANDO FAZ DIFERENÇA: Faz diferença ao juntar os pedaços da resposta, lidar com falhas e cancelar a chamada.
+ * Envia as mensagens do chat ao Worker da Cloudflare e recebe a resposta.
+ * Na rota privada, inclui o contexto financeiro quando a versão configurada
+ * permite o envio. Entrega os trechos à medida que chegam e trata falhas
+ * e cancelamentos da chamada.
  */
 
 const { criarErro, validarMensagens, VERSAO_CONTEXTO_FINANCEIRO, LIMITE_CONTEXTO_FINANCEIRO_BYTES } = require('./chatValidation.js')
@@ -166,4 +167,20 @@ const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal, contex
     }
 }
 
-module.exports = { gerarResposta, obterConfiguracao, obterConfiguracaoPrivada, WORKER_URL_PADRAO }
+const interpretarAcao = async (payload, signal) => {
+    const { url, token } = obterConfiguracaoPrivada()
+    const endpoint = new URL('/v1/ia/chat/acoes/interpretar', url)
+    if (endpoint.protocol !== 'https:') throw criarErro(503, 'Configure HTTPS para interpretar ações.', 'IA_CONFIGURACAO')
+    const timeout = AbortSignal.timeout(18_000)
+    const resposta = await fetch(endpoint, {
+        method: 'POST', redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload), signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+    })
+    if (!resposta.ok) throw erroWorker(resposta.status)
+    const bruto = await resposta.text()
+    if (Buffer.byteLength(bruto) > 8192) throw criarErro(502, 'Interpretação inválida.', 'IA_RESPOSTA_INVALIDA')
+    return JSON.parse(bruto)
+}
+
+module.exports = { gerarResposta, interpretarAcao, obterConfiguracao, obterConfiguracaoPrivada, WORKER_URL_PADRAO }

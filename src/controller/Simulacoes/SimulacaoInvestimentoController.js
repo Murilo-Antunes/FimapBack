@@ -96,6 +96,7 @@ const removerSimulacaoInvestimento = executar(async (req, res, usuarioId) => {
 })
 
 module.exports = {
+    validarDados,
     listarSimulacoesInvestimento,
     criarSimulacaoInvestimento,
     consultarSimulacaoInvestimento,
