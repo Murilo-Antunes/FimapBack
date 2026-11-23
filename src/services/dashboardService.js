@@ -1,3 +1,9 @@
+/*
+ * Calcula os indicadores financeiros exibidos no painel do FIMAP.
+ * O contexto do chat reutiliza cálculos como os de receitas, despesas e
+ * patrimônio para apresentar os valores de acordo com as regras do painel.
+ */
+
 const pluggyService = require("./pluggyService.js")
 
 const numero = (valor) => {

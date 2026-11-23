@@ -1,7 +1,8 @@
 /*
- * PARA QUE SERVE: Conversa com a IA da Cloudflare: envia a pergunta e recebe a resposta.
- * QUANDO ENTRA EM AÇÃO: É usado pelos dois tipos de chat quando precisam gerar uma resposta.
- * QUANDO FAZ DIFERENÇA: Faz diferença ao juntar os pedaços da resposta, lidar com falhas e cancelar a chamada.
+ * Envia as mensagens do chat ao Worker da Cloudflare e recebe a resposta.
+ * Na rota privada, inclui o contexto financeiro quando a versão configurada
+ * permite o envio. Entrega os trechos à medida que chegam e trata falhas
+ * e cancelamentos da chamada.
  */
 
 const { criarErro, validarMensagens, VERSAO_CONTEXTO_FINANCEIRO, LIMITE_CONTEXTO_FINANCEIRO_BYTES } = require('./chatValidation.js')

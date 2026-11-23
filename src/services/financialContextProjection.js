@@ -1,3 +1,9 @@
+/*
+ * Transforma os dados consultados em totais e detalhes selecionados para a IA.
+ * Reaproveita os cálculos do painel e do extrato para manter os valores
+ * de receitas, despesas e faturas alinhados aos exibidos no site.
+ */
+
 const painel = require('./dashboardService.js')
 const { somarFatura, dataISO10 } = require('./extratoCartao/extratoCartaoMapper.js')
 const { diaISO, normalizarTexto } = require('./financialContextSelection.js')

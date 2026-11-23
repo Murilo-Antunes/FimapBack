@@ -1,5 +1,9 @@
-// Reaproveita a checagem de sincronização que você já usa em listarContas.
-// Ela precisa estar exportada pelo pluggyService (ajuste o caminho se o arquivo for outro).
+/*
+ * Consulta e monta o extrato do cartão por período a partir dos dados do Pluggy.
+ * O chat usa esse extrato para resumir faturas e compras com os mesmos dados
+ * exibidos na tela de extrato do FIMAP.
+ */
+
 const { verificarSincronizacao } = require('./pluggyService.js')
 
 const pluggyApi = require('./extratoCartao/pluggyApi')

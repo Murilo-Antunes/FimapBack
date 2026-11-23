@@ -1,3 +1,9 @@
+/*
+ * Monta o contexto financeiro do usuário autenticado para o chat.
+ * Consulta as metas no banco e os dados das conexões Open Finance autorizadas,
+ * conforme os módulos e o período identificados na conversa.
+ */
+
 const { addAbortListener } = require('node:events')
 const conexoesDAO = require('../../model/DAO/OpenFinance/conexaoOpenFinanceDAO.js')
 const metasDAO = require('../../model/DAO/Metas/MetasDAO.js')

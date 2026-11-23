@@ -1,3 +1,9 @@
+/*
+ * Define quais módulos financeiros consultar e qual período usar a partir
+ * da pergunta e do histórico recente. Um acompanhamento como "E no mês
+ * passado?" pode reaproveitar o assunto da pergunta anterior.
+ */
+
 const DIA_MS = 86_400_000
 const MESES = 'janeiro fevereiro marco abril maio junho julho agosto setembro outubro novembro dezembro'.split(' ')
 const MES_NOME = new RegExp(`\\b(${MESES.join('|')})(?: de (20\\d{2}))?\\b`)

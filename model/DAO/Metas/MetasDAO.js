@@ -1,3 +1,7 @@
+/*
+ * Lê e grava as metas financeiras no banco do FIMAP.
+ * O chat usa a listagem por usuário para montar o resumo das metas do titular.
+ */
 
 const knex = require('knex')
 

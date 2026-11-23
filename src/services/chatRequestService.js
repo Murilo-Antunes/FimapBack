@@ -1,3 +1,9 @@
+/*
+ * Coordena a geração da resposta no chat autenticado. Recupera o histórico
+ * recente, solicita o contexto financeiro quando habilitado e envia os dados
+ * ao serviço da IA. Também acompanha o estado de cada requisição.
+ */
+
 const { createHash, randomUUID } = require('node:crypto')
 const dao = require('../../model/DAO/MensagemChat/RequisicaoChatDAO.js')
 const { formatarMensagem } = require('../../model/DAO/MensagemChat/MensagemChatDAO.js')
