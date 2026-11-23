@@ -17,7 +17,7 @@ const ARQUIVOS_MAX_POR_POST = 10
 const FEED_LIMITE_PADRAO = 12
 const FEED_LIMITE_MAX = 30
 const FEED_BUSCA_MAX_CARACTERES = 100
-const TIPOS = ['texto', 'foto', 'video']
+
 
 const TIPOS = ['texto', 'foto', 'video']
 
