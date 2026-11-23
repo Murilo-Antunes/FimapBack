@@ -25,7 +25,7 @@ const lerParam = (req, ...nomes) => {
 
 // TEMPORÁRIO: lê o id do body/query, igual aos outros controllers de post.
 // Trocar por req.usuario.id quando o login com token estiver pronto.
-const idDoUsuarioLogado = (req) => Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 /* ========================= HELPERS: VERIFICAÇÕES ========================= */
 

@@ -3,6 +3,7 @@ const router = express.Router();
 
 const postController = require("../controller/Comunidade/Post/postController.js");
 const postSalvoController = require("../controller/Comunidade/Post/postSalvoController.js"); // NOVA
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 // Montada em /v1/comunidade/posts
 

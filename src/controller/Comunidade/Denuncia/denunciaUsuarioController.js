@@ -10,7 +10,7 @@ const responderErro = (res, cfg) =>
 const responderSucesso = (res, cfg, dados = {}) =>
     res.status(cfg.status).json({ sucesso: true, mensagem: cfg.mensagem, ...dados })
 
-const idDoUsuarioLogado = (req) => Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 const ehDuplicada = (error) => error?.code === 'ER_DUP_ENTRY'
 

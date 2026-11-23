@@ -50,7 +50,7 @@ const lerParam = (req, ...nomes) => {
 // TEMPORÁRIO: lê o id do body ou da query, então qualquer pessoa pode enviar o id
 // de outro usuário e se passar por ele. Quando o login com token estiver pronto,
 // troque por req.usuario.id (vindo do middleware de autenticação).
-const idDoUsuarioLogado = (req) => Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 // Extrai o texto do post da requisição. O front pode mandar de três formas:
 //   - array em req.body.conteudo: [{ tipo: 'texto', valor }]
@@ -155,7 +155,7 @@ const perfilSocialCompleto = (u) =>
     Boolean(u?.nome_exibicao?.trim() && u?.username_social?.trim())
 
 // Id do usuário que está vendo (só para marcar "curtiu"); 0 quando não informado
-const idDoVisualizador = (req) => Number(req.query?.id_usuario) || 0
+const idDoVisualizador = (req) => Number(req.usuario?.id) || 0
 
 /* ========================== HELPERS: UPLOADS ========================== */
 

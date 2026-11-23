@@ -6,6 +6,7 @@ const usuarioModel = require('../../../model/DAO/Usuario/usuarioDAO.js')
 const usuarioSocialDAO = require('../../../model/DAO/Usuario/usuarioSocialDAO.js')
 const { UploadArquivo, ExcluirVarias } = require('../../services/cloudinary.js')
 const { enviarOTP } = require('../../config/email.js')
+const { gerarToken } = require('../../services/jwtService.js')
 
 const OTP_VALIDADE_MS = 5 * 60 * 1000
 const SENHA_MIN_CARACTERES = 8
@@ -260,9 +261,8 @@ const verificarOTPCadastro = async (req, res) => {
     }
 }
 
-// Atualizar usuário (dados gerais).
-// Só campos da lista branca. Se vier "senha", exige "codigo" (OTP) válido:
-// o código é consumido e o DAO faz o hash da senha uma única vez.
+// Atualizar dados do próprio usuário autenticado. Recuperação sem sessão usa
+// redefinirSenhaComOTP, que valida e consome o código antes de gravar a senha.
 const atualizarUsuario = async (req, res) => {
     try {
         const id_usuario = Number(req.params.id_usuario)
@@ -381,6 +381,34 @@ const solicitarOTPAlteracaoSenha = async (req, res) => {
     } catch (error) {
         console.error('Erro ao solicitar OTP:', error)
         return responderErro(res, config_message.ERRO_GERAR_OTP)
+    }
+}
+
+// Recuperação pública de senha: o OTP enviado ao e-mail é a prova de posse da conta.
+const redefinirSenhaComOTP = async (req, res) => {
+    try {
+        const id_usuario = Number(req.params.id_usuario)
+        const { codigo, novaSenha } = req.body || {}
+
+        if (!idValido(id_usuario) || !codigo || !senhaValida(novaSenha)) {
+            return res.status(400).json({
+                sucesso: false,
+                mensagem: 'Informe um código válido e uma nova senha com pelo menos 8 caracteres.'
+            })
+        }
+
+        const otp = await codigoOTPModel.GetCodigoOTPValido(id_usuario, String(codigo))
+        if (!otp || !await codigoOTPModel.DesativarCodigoOTP(id_usuario, String(codigo))) {
+            return responderOTPInvalido(res)
+        }
+
+        const atualizado = await usuarioModel.UpdateUsers({ id_usuario, senha: novaSenha })
+        if (!atualizado) return responderErro(res, config_message.ERRO_ATUALIZAR_USUARIO)
+
+        return res.status(200).json({ sucesso: true, mensagem: 'Senha redefinida com sucesso.' })
+    } catch (error) {
+        console.error('Erro ao redefinir senha por OTP:', error)
+        return responderErro(res, config_message.ERRO_ATUALIZAR_USUARIO)
     }
 }
 
@@ -732,10 +760,21 @@ const login = async (req, res) => {
             })
         }
 
+        const token = gerarToken({ sub: String(idDoUsuario(usuario)) })
+        if (!token) {
+            return res.status(503).json({
+                sucesso: false,
+                codigo: 'JWT_CONFIGURACAO',
+                mensagem: 'A autenticação não está configurada com um segredo seguro.'
+            })
+        }
+
         return res.status(config_message.LOGIN_SUCESSO.status).json({
             sucesso: true,
             mensagem: config_message.LOGIN_SUCESSO.mensagem,
-            usuario: semSenha(usuario)
+            usuario: semSenha(usuario),
+            access_token: token,
+            tipo_token: 'Bearer'
         })
     } catch (error) {
         console.error('Erro ao realizar login:', error)
@@ -896,6 +935,7 @@ module.exports = {
     enviarFotoPerfil,
     removerFotoPerfil,
     solicitarOTPAlteracaoSenha,
+    redefinirSenhaComOTP,
     verificarCodigoAlteracaoSenha,
     verificarSenhaAtual,
     alterarSenhaComSenhaAtual,
