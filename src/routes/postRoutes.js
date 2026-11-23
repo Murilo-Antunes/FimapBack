@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 
 const postController = require("../controller/Comunidade/Post/postController.js");
-const postSalvoController = require("../controller/Comunidade/Post/postSalvoController.js"); // NOVA
 
 // Montada em /v1/comunidade/posts
 
@@ -10,11 +9,9 @@ const postSalvoController = require("../controller/Comunidade/Post/postSalvoCont
 router.post("/criar", postController.criarPost);
 
 // Posts salvos — ANTES das rotas por id/usuário pra não colidir com elas.
-router.post("/salvar", postSalvoController.salvarPost);                                   // NOVA
-router.post("/salvar/alternar", postSalvoController.alternarSalvarPost);                  // NOVA
-router.get("/salvar/verificar/:id_post", postSalvoController.verificarPostSalvo);         // NOVA
-router.delete("/salvar/:id_post", postSalvoController.removerPostSalvo);                 // NOVA
-router.get("/salvos/:id_usuario", postSalvoController.listarSalvosPorUsuario);           // NOVA
+router.post("/salvar", postController.salvarPost);                                   // NOVA
+router.delete("/salvar/:id_post", postController.removerPostSalvo);                 // NOVA
+router.get("/salvos/:id_usuario", postController.listarPostsSalvos);           // NOVA
 
 // Buscar (rotas fixas primeiro, por id por último)
 router.get("/feed", postController.listarFeed);                                       // NOVA

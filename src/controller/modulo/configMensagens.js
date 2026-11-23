@@ -2285,28 +2285,28 @@ DENUNCIA_AUTO_DENUNCIA:  { status: 400, mensagem: 'Você não pode denunciar a s
 NIVEIS_ENCONTRADOS:  { status: 200, mensagem: 'Níveis encontrados.' },
 ERRO_BUSCAR_NIVEIS:  { status: 500, mensagem: 'Erro ao buscar níveis.' },
 
-    POST_SALVO: config_message.POST_SALVO ?? {
+    POST_SALVO:{
         status: 201, mensagem: 'Post salvo com sucesso.'
     },
-    POST_JA_SALVO: config_message.POST_JA_SALVO ?? {
+    POST_JA_SALVO:{
         status: 409, mensagem: 'Você já salvou este post.'
     },
-    POST_SALVO_REMOVIDO: config_message.POST_SALVO_REMOVIDO ?? {
+    POST_SALVO_REMOVIDO:{
         status: 200, mensagem: 'Post removido dos salvos.'
     },
-    POST_NAO_ESTAVA_SALVO: config_message.POST_NAO_ESTAVA_SALVO ?? {
+    POST_NAO_ESTAVA_SALVO:{
         status: 404, mensagem: 'Este post não está nos seus salvos.'
     },
-    POSTS_SALVOS_ENCONTRADOS: config_message.POSTS_SALVOS_ENCONTRADOS ?? {
+    POSTS_SALVOS_ENCONTRADOS:{
         status: 200, mensagem: 'Posts salvos encontrados.'
     },
-    ERRO_SALVAR_POST: config_message.ERRO_SALVAR_POST ?? {
+    ERRO_SALVAR_POST:{
         status: 500, mensagem: 'Erro ao salvar o post.'
     },
-    ERRO_REMOVER_POST_SALVO: config_message.ERRO_REMOVER_POST_SALVO ?? {
+    ERRO_REMOVER_POST_SALVO:{
         status: 500, mensagem: 'Erro ao remover o post dos salvos.'
     },
-    ERRO_BUSCAR_POSTS_SALVOS: config_message.ERRO_BUSCAR_POSTS_SALVOS ?? {
+    ERRO_BUSCAR_POSTS_SALVOS:{
         status: 500, mensagem: 'Erro ao buscar os posts salvos.'
     }
 

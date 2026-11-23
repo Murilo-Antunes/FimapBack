@@ -621,19 +621,19 @@ const salvarPost = async (req, res) => {
         }
 
         if (await postDAO.ExistePostSalvo(id_usuario, id_post)) {
-            return responderErro(res, MSG_SALVOS.POST_JA_SALVO)
+            return responderErro(res, config_message.POST_JA_SALVO)
         }
 
         await postDAO.SalvarPost(id_usuario, id_post)
 
-        return responderSucesso(res, MSG_SALVOS.POST_SALVO, {
+        return responderSucesso(res, config_message.POST_SALVO, {
             post: formatarPost({ ...post, salvo: 1 })
         })
 
     } catch (error) {
         // Corrida: o outro request salvou primeiro
         if (error.code === 'ER_DUP_ENTRY') {
-            return responderErro(res, MSG_SALVOS.POST_JA_SALVO)
+            return responderErro(res, config_message.POST_JA_SALVO)
         }
 
         // Usuário ou post removido entre a validação e o INSERT
@@ -642,7 +642,7 @@ const salvarPost = async (req, res) => {
         }
 
         console.error('Erro ao salvar post:', error)
-        return responderErro(res, MSG_SALVOS.ERRO_SALVAR_POST)
+        return responderErro(res, config_message.ERRO_SALVAR_POST)
     }
 }
 
@@ -661,14 +661,14 @@ const removerPostSalvo = async (req, res) => {
         const linhasRemovidas = await postDAO.RemoverPostSalvo(id_usuario, id_post)
 
         if (!linhasRemovidas) {
-            return responderErro(res, MSG_SALVOS.POST_NAO_ESTAVA_SALVO)
+            return responderErro(res, config_message.POST_NAO_ESTAVA_SALVO)
         }
 
-        return responderSucesso(res, MSG_SALVOS.POST_SALVO_REMOVIDO)
+        return responderSucesso(res, config_message.POST_SALVO_REMOVIDO)
 
     } catch (error) {
         console.error('Erro ao remover post salvo:', error)
-        return responderErro(res, MSG_SALVOS.ERRO_REMOVER_POST_SALVO)
+        return responderErro(res, config_message.ERRO_REMOVER_POST_SALVO)
     }
 }
 
@@ -697,7 +697,7 @@ const listarPostsSalvos = async (req, res) => {
 
         const formatados = posts.map(formatarPost)
 
-        return responderSucesso(res, MSG_SALVOS.POSTS_SALVOS_ENCONTRADOS, {
+        return responderSucesso(res, config_message.POSTS_SALVOS_ENCONTRADOS, {
             pagina,
             limite,
             total,
@@ -707,7 +707,7 @@ const listarPostsSalvos = async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao listar posts salvos:', error)
-        return responderErro(res, MSG_SALVOS.ERRO_BUSCAR_POSTS_SALVOS)
+        return responderErro(res, config_message.ERRO_BUSCAR_POSTS_SALVOS)
     }
 }
 
