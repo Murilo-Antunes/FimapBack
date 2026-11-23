@@ -1,3 +1,5 @@
+// Cria a tabela que guarda os alertas e recomendações da IA por usuário,
+// incluindo a mensagem, a ação sugerida e quando o alerta foi dispensado.
 const table = 'tbl_alerta_gasto_ia'
 
 exports.up = (knex) => knex.schema.createTable(table, (columns) => {

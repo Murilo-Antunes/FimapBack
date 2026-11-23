@@ -1,3 +1,5 @@
+// Adiciona área e validade às recomendações para a exibição e o histórico.
+// Também guarda posições de investimento para comparar quantidade e valor ao longo do tempo.
 exports.up = async (db) => {
     await db.schema.alterTable('tbl_alerta_gasto_ia', (columns) => {
         columns.string('area', 24).notNullable().defaultTo('nucleo')

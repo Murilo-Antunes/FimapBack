@@ -1,4 +1,5 @@
-// Extensão aditiva: não altera papéis nem apaga o histórico existente.
+// Registra o estado dos pedidos do chat à IA para recuperar respostas
+// concluídas e impedir que o mesmo pedido seja processado duas vezes.
 exports.up = async (knex) => {
     await knex.schema.createTable('tbl_chat_requisicao', (t) => {
         t.engine('InnoDB')
