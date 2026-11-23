@@ -139,9 +139,28 @@ const GetAllUsers = async () => {
     }
 }
 
+const COLUNAS_PUBLICAS = [
+    'id',
+    'nome',
+    'nome_exibicao',
+    'username_social',
+    'biografia_social',
+    'localizacao_estado',
+    'foto_perfil',
+    'visibilidade',
+    'plano',
+    'data_cadastro',
+    'xp_usuario',
+    'nivel_total',
+    'ranking_posicao',
+    'total_seguidores',
+    'total_seguindo',
+    'total_badges',
+]
+
 async function BuscarUsuarioPorUsernameSocial(username_social) {
     const usuario = await knexConex('vw_perfil_usuario')
-        .select('*')
+        .select(COLUNAS_PUBLICAS)
         .where({ username_social })
         .first()
 
