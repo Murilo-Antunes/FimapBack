@@ -446,20 +446,6 @@ CREATE TABLE IF NOT EXISTS tbl_categoria_denuncia (
     nome VARCHAR(40) NOT NULL
 );
 
-
-INSERT INTO tbl_categoria_denuncia (nome) VALUES
-('Spam'),
-('Discurso de ódio'),
-('Assédio ou bullying'),
-('Conteúdo ofensivo'),
-('Informação falsa'),
-('Golpe ou fraude'),
-('Conteúdo impróprio'),
-('Violação de privacidade'),
-('Falsidade ideológica'),
-('Conteúdo fora do contexto'),
-('Divulgação não autorizada');
-
 # ------------------- DENUNCIA --------------------
 # cria tabela tbl_denuncia
 CREATE TABLE IF NOT EXISTS tbl_denuncia (
@@ -489,6 +475,35 @@ CREATE TABLE IF NOT EXISTS tbl_denuncia (
     UNIQUE(id_usuario, id_post)
 );
 
+# ------------------- DENUNCIA --------------------
+CREATE TABLE IF NOT EXISTS `tbl_chat_requisicao` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  id_usuario INT NOT NULL,
+  id_chat INT NOT NULL,
+  requisicao_id VARCHAR(36) NOT NULL,
+  hash_pedido VARCHAR(64) NOT NULL,
+  pergunta TEXT NOT NULL,
+  estado ENUM('gerando', 'concluida', 'falhou', 'cancelada', 'expirada') NOT NULL,
+  chat_ativo INT NULL DEFAULT NULL,
+  dono_lease VARCHAR(36) NOT NULL,
+  lease_ate_ms BIGINT NOT NULL,
+  criada_ms BIGINT NOT NULL,
+  id_mensagem_usuario INT NULL DEFAULT NULL,
+  id_mensagem_assistente INT NULL DEFAULT NULL,
+  codigo_erro VARCHAR(64) NULL DEFAULT NULL,
+  status_erro INT NULL DEFAULT NULL,
+  retry_after VARCHAR(80) NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `UQ_CHAT_GERACAO_ATIVA` (`chat_ativo`),
+  UNIQUE KEY `UQ_USUARIO_REQUISICAO` (`id_usuario`, `requisicao_id`),
+  KEY `IDX_REQUISICAO_LIMITE` (`id_usuario`, `criada_ms`),
+  KEY `IDX_REQUISICAO_CONTEXTO` (`id_chat`, `estado`, `id`),
+  CONSTRAINT `FK_USUARIO_CHAT_REQUISICAO`
+    FOREIGN KEY (`id_usuario`) REFERENCES `tbl_usuario` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `FK_CHAT_CHAT_REQUISICAO`
+    FOREIGN KEY (`id_chat`) REFERENCES `tbl_chat` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 ALTER TABLE tbl_meta_financeira
     ADD COLUMN aporte_mensal DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER valor_total,
@@ -512,10 +527,18 @@ ALTER TABLE tbl_categoria_meta
     
 SELECT * from tbl_conexao_open_finance;
 SELECT * from tbl_meta_financeira;
+SELECT * from tbl_categoria_meta;
     
 ALTER TABLE tbl_conexao_open_finance
 	ADD COLUMN nome_instituicao VARCHAR(100) NULL AFTER external_connection_id;
 
+ALTER TABLE tbl_conexao_open_finance
+    ADD COLUMN percentual_cdi_manual DECIMAL(5,2) NULL;
+    
+ALTER TABLE tbl_notificacao
+  ADD COLUMN tipo_referencia VARCHAR(30) NULL AFTER id_usuario,
+  ADD COLUMN id_referencia INT NULL AFTER tipo_referencia;
+  
 DELIMITER $$
 
 CREATE TRIGGER trg_apos_cadastro_configuracoes
@@ -564,16 +587,6 @@ BEGIN
 
     INSERT INTO tbl_notificacao (icone, nome, conteudo, data_criacao, lida, id_usuario)
     VALUES ('🏅', 'Nova Conquista!', CONCAT('Você desbloqueou a badge: ', v_nome_badge), NOW(), 0, NEW.id_usuario);
-END$$
-
--- Invalida códigos OTP anteriores ativos antes de gerar um novo para o usuário
-CREATE TRIGGER trg_antes_inserir_otp
-BEFORE INSERT ON tbl_codigo_otp
-FOR EACH ROW
-BEGIN
-    UPDATE tbl_codigo_otp
-    SET ativo = 0
-    WHERE id_usuario = NEW.id_usuario AND ativo = 1;
 END$$
 
 -- Conclui a meta automaticamente quando valor_total atinge valor_desejado
@@ -701,3 +714,191 @@ FROM tbl_ranking r
 INNER JOIN tbl_usuario u ON u.id = r.id_usuario
 WHERE u.visibilidade = 1
 ORDER BY r.posicao ASC;
+
+
+-- Modificações Comunidade
+
+-- =====================================================================
+--  FIMAP — Ajustes de banco para a parte social (perfil, badges, posts)
+--  Execute direto no banco (sem migration). Rode em db_fimap_2026.
+--  Idempotente onde deu pra fazer (IF NOT EXISTS / ON DUPLICATE KEY).
+-- =====================================================================
+
+USE db_fimap_2026;
+
+-- ---------------------------------------------------------------------
+-- 1) "Membro desde ..." — data de cadastro do usuário
+-- ---------------------------------------------------------------------
+ALTER TABLE tbl_usuario
+    ADD COLUMN data_cadastro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER localizacao_estado;
+
+-- ---------------------------------------------------------------------
+-- 2) Selo PRO — plano do usuário
+--    Simples por enquanto (coluna). Se um dia vender assinatura com
+--    cobrança recorrente/renovação, troque por uma tbl_assinatura com
+--    histórico (data_inicio, data_fim, status, gateway_id etc.).
+-- ---------------------------------------------------------------------
+ALTER TABLE tbl_usuario
+    ADD COLUMN plano ENUM('FREE','PRO') NOT NULL DEFAULT 'FREE' AFTER visibilidade;
+
+-- ---------------------------------------------------------------------
+-- 3) Categorias de badge
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tbl_categoria_badge (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(40) NOT NULL,
+    UNIQUE(nome)
+);
+
+INSERT INTO tbl_categoria_badge (nome) VALUES
+    ('Metas & Hábitos'),
+    ('Investimentos'),
+    ('Comunidade'),
+    ('Open Finance')
+ON DUPLICATE KEY UPDATE nome = VALUES(nome);
+
+ALTER TABLE tbl_badge
+    ADD COLUMN id_categoria INT NULL AFTER xp;
+
+ALTER TABLE tbl_badge
+    ADD CONSTRAINT FK_CATEGORIA_BADGE
+    FOREIGN KEY (id_categoria)
+    REFERENCES tbl_categoria_badge (id)
+    ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------
+-- 4) Progresso de badges NÃO conquistadas (parcial)
+--    Só dá pra calcular de forma automática o que já tem tabela por
+--    trás. "Disciplina de Ferro" (orçamento mensal) e "Carteira
+--    Diversificada" (classes de investimento) NÃO têm tabela de origem
+--    no schema atual — ficam sem criterio_tipo (sem barra de progresso)
+--    até existir uma tbl_orcamento / tbl_carteira_ativo.
+-- ---------------------------------------------------------------------
+ALTER TABLE tbl_badge
+    ADD COLUMN criterio_tipo VARCHAR(40) NULL AFTER id_categoria,
+    ADD COLUMN criterio_meta INT NULL AFTER criterio_tipo;
+
+-- Tipos suportados hoje pela API (ver model/DAO/Badge/badgeProgressoDAO.js):
+--   'conexoes_open_finance'  -> conta tbl_conexao_open_finance com status = 1
+--   'simulacoes'             -> conta tbl_simulacao_investimento + tbl_simulacao_amortizacao
+--   'respostas_validadas'    -> conta tbl_comentario com marcado_como_solucao = 1
+-- Qualquer outro criterio_tipo (ou NULL) simplesmente não entra na resposta
+-- de progresso — fica como badge bloqueada "simples", sem barra de %.
+
+-- Exemplos de uso (ajuste os ids/nomes reais das suas badges já cadastradas):
+-- UPDATE tbl_badge SET criterio_tipo = 'conexoes_open_finance', criterio_meta = 3  WHERE nome = 'Early Adopter';
+-- UPDATE tbl_badge SET criterio_tipo = 'simulacoes',            criterio_meta = 20 WHERE nome = 'Simulador Pro';
+-- UPDATE tbl_badge SET criterio_tipo = 'respostas_validadas',   criterio_meta = 50 WHERE nome = 'Top Contribuidor';
+
+-- "Solução" num comentário — necessário pros badges de Top Contribuidor/Mentora
+-- (tbl_comentario não tinha como marcar uma resposta como aceita/útil).
+ALTER TABLE tbl_comentario
+    ADD COLUMN marcado_como_solucao TINYINT(1) NOT NULL DEFAULT 0 AFTER mensagem;
+
+-- ---------------------------------------------------------------------
+-- 5) Badges em destaque — agora dá pra LER quais estão marcadas
+--    (o PATCH que você já tinha passa a gravar nessa coluna).
+-- ---------------------------------------------------------------------
+ALTER TABLE tbl_badge_usuario
+    ADD COLUMN em_destaque TINYINT(1) NOT NULL DEFAULT 0;
+
+CREATE INDEX IDX_BADGEUSUARIO_DESTAQUE ON tbl_badge_usuario (id_usuario, em_destaque);
+
+-- ---------------------------------------------------------------------
+-- 6) Posts salvos (aba "Salvos" do perfil)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tbl_post_salvo (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    data_salvo DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario INT NOT NULL,
+    id_post INT NOT NULL,
+
+    CONSTRAINT FK_USUARIO_POSTSALVO
+    FOREIGN KEY (id_usuario)
+    REFERENCES tbl_usuario (id)
+    ON DELETE CASCADE,
+
+    CONSTRAINT FK_POST_POSTSALVO
+    FOREIGN KEY (id_post)
+    REFERENCES tbl_post (id)
+    ON DELETE CASCADE,
+
+    UNIQUE (id_usuario, id_post)
+);
+
+-- ---------------------------------------------------------------------
+-- 9) Denúncia de usuário (perfil), separada da denúncia de post
+--    (reaproveita tbl_categoria_denuncia que já existe).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tbl_denuncia_usuario (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(100) NOT NULL,
+    descricao TEXT NOT NULL,
+    data_criacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario_denunciante INT NOT NULL,
+    id_usuario_denunciado INT NOT NULL,
+    id_categoria INT NOT NULL,
+
+    CONSTRAINT FK_DENUNCIANTE_DENUNCIAUSUARIO
+    FOREIGN KEY (id_usuario_denunciante)
+    REFERENCES tbl_usuario (id)
+    ON DELETE CASCADE,
+
+    CONSTRAINT FK_DENUNCIADO_DENUNCIAUSUARIO
+    FOREIGN KEY (id_usuario_denunciado)
+    REFERENCES tbl_usuario (id)
+    ON DELETE CASCADE,
+
+    CONSTRAINT FK_CATEGORIA_DENUNCIAUSUARIO
+    FOREIGN KEY (id_categoria)
+    REFERENCES tbl_categoria_denuncia (id)
+    ON DELETE CASCADE,
+
+    UNIQUE (id_usuario_denunciante, id_usuario_denunciado)
+);
+
+-- ---------------------------------------------------------------------
+-- 10) Títulos de nível (passam a vir do backend, em vez de mapa fixo no front)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tbl_nivel (
+    nivel INT NOT NULL PRIMARY KEY,
+    titulo VARCHAR(60) NOT NULL,
+    xp_necessario INT NOT NULL
+);
+
+INSERT INTO tbl_nivel (nivel, titulo, xp_necessario) VALUES
+    (1, 'Iniciante', 0),
+    (2, 'Aprendiz', 100),
+    (3, 'Estrategista', 200),
+    (4, 'Mentor Alpha', 300),
+    (5, 'Lenda Fimap', 400)
+ON DUPLICATE KEY UPDATE titulo = VALUES(titulo), xp_necessario = VALUES(xp_necessario);
+
+-- ---------------------------------------------------------------------
+-- 8) Ranking / stats do perfil — a view já calculava ranking_posicao,
+--    total_seguidores, total_seguindo e total_badges. Só adicionamos
+--    "plano" e "data_cadastro" pra não precisar mexer no controller
+--    além de confirmar que ele faz SELECT * FROM vw_perfil_usuario.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_perfil_usuario AS
+SELECT
+    u.id,
+    u.nome,
+    u.email,
+    u.username,
+    u.nome_exibicao,
+    u.username_social,
+    u.biografia_social,
+    u.localizacao_estado,
+    u.foto_perfil,
+    u.visibilidade,
+    u.plano,
+    u.data_cadastro,
+    u.xp_usuario,
+    u.nivel_total,
+    COALESCE(r.posicao, 0) AS ranking_posicao,
+    (SELECT COUNT(*) FROM tbl_seguidores s WHERE s.id_seguindo = u.id) AS total_seguidores,
+    (SELECT COUNT(*) FROM tbl_seguidores s WHERE s.id_seguidor = u.id) AS total_seguindo,
+    (SELECT COUNT(*) FROM tbl_badge_usuario bu WHERE bu.id_usuario = u.id) AS total_badges
+FROM tbl_usuario u
+LEFT JOIN tbl_ranking r ON r.id_usuario = u.id;

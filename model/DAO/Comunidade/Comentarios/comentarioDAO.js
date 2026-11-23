@@ -6,6 +6,20 @@ const knexConex = knex(knexConfig.development)
 // Convenção deste arquivo: erros de banco são relançados (throw);
 // quem trata é o controller.
 
+// Comentário + autor + curtidas. idVisualizador = 0 quando não há usuário.
+const SQL_COMENTARIO_COM_AUTOR = `
+    select c.*,
+        u.id as autor_id,
+        u.nome_exibicao as autor_nome_exibicao,
+        u.username_social as autor_username_social,
+        u.foto_perfil as autor_foto_perfil,
+        (select count(*) from tbl_curtida_comentario cc where cc.id_comentario = c.id) as total_curtidas,
+        exists(select 1 from tbl_curtida_comentario cc
+               where cc.id_comentario = c.id and cc.id_usuario = ?) as curtiu,
+        (select count(*) from tbl_comentario t where t.id_comentario_pai = c.id) as total_respostas
+    from tbl_comentario c
+    join tbl_usuario u on u.id = c.id_usuario`
+
 /* ------------------------------ Create ------------------------------ */
 
 // Cria um comentário (raiz ou resposta). Retorna o id criado.
@@ -52,17 +66,31 @@ const GetComentarioById = async (comentarioId) => {
     }
 }
 
-// Todos os comentários de um post (raiz + respostas), do mais antigo ao mais novo.
+// Comentário com autor e curtidas (para devolver o recém-criado). Retorna a linha ou null
+const GetComentarioComAutorById = async (comentarioId, idVisualizador = 0) => {
+    try {
+        const [rows] = await knexConex.raw(
+            `${SQL_COMENTARIO_COM_AUTOR} where c.id = ?`,
+            [Number(idVisualizador) || 0, comentarioId]
+        )
+
+        return rows[0] ?? null
+    } catch (error) {
+        console.error('Erro ao buscar comentário com autor:', error)
+        throw error
+    }
+}
+
+// Todos os comentários de um post (raiz + respostas), do mais antigo ao mais novo,
+// com autor, total_curtidas e curtiu (do idVisualizador).
 // Usa o índice IDX_COMENTARIO_POST_DATA
-const GetAllComentariosByIdPost = async (idPost) => {
-    const sql = `select c.*,
-    (select count(*) from tbl_comentario t where t.id_comentario_pai = c.id) as total_respostas
-    from tbl_comentario c
-    where c.id_comentario_pai = ?
-    order by c.data_criacao asc`
+const GetAllComentariosByIdPost = async (idPost, idVisualizador = 0) => {
+    const sql = `${SQL_COMENTARIO_COM_AUTOR}
+        where c.id_post = ?
+        order by c.data_criacao asc, c.id asc`
 
     try {
-        const [rows] = await knexConex.raw(sql, [idPost])
+        const [rows] = await knexConex.raw(sql, [Number(idVisualizador) || 0, idPost])
 
         return rows
     } catch (error) {
@@ -88,15 +116,13 @@ const GetComentariosRaizByIdPost = async (idPost) => {
 }
 
 // Respostas diretas de um comentário
-const GetRespostasByIdComentarioPai = async (idComentarioPai) => {
-    const sql = `select c.*,
-    (select count(*) from tbl_comentario t where t.id_comentario_pai = c.id) as total_respostas
-    from tbl_comentario c
-    where c.id_post = ? and c.id_comentario_pai is null
-    order by c.data_criacao asc`
+const GetRespostasByIdComentarioPai = async (idComentarioPai, idVisualizador = 0) => {
+    const sql = `${SQL_COMENTARIO_COM_AUTOR}
+        where c.id_comentario_pai = ?
+        order by c.data_criacao asc, c.id asc`
 
     try {
-        const [rows] = await knexConex.raw(sql, [idComentarioPai])
+        const [rows] = await knexConex.raw(sql, [Number(idVisualizador) || 0, idComentarioPai])
 
         return rows
     } catch (error) {
@@ -168,6 +194,7 @@ module.exports = {
     UpdateComentario,
     DeleteComentario,
     GetComentarioById,
+    GetComentarioComAutorById,
     GetAllComentariosByIdPost,
     GetComentariosRaizByIdPost,
     GetRespostasByIdComentarioPai,

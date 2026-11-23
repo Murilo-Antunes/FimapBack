@@ -2254,6 +2254,62 @@ ERRO_BUSCAR_CATEGORIAS_DENUNCIA: {
     mensagem: 'Erro ao buscar as categorias de denúncia.'
 },
 
+LIMITE_ARQUIVOS_POST: {
+    status: 400,
+    mensagem: 'Um post aceita no máximo 10 fotos e vídeos.'
+},
+
+TIPO_ARQUIVO_NAO_PERMITIDO: {
+    status: 400,
+    mensagem: 'Tipo de arquivo não permitido.'
+},
+
+PERFIL_SOCIAL_INCOMPLETO: {
+    status: 403,
+    mensagem: 'Crie seu perfil social antes de publicar.'
+},
+POST_JA_SALVO:        { status: 409, mensagem: 'Você já salvou esta publicação.' },
+POST_SALVO_CRIADO:    { status: 201, mensagem: 'Publicação salva.' },
+ERRO_SALVAR_POST:     { status: 500, mensagem: 'Erro ao salvar publicação.' },
+SALVO_NAO_ENCONTRADO: { status: 404, mensagem: 'Publicação não estava salva.' },
+SALVO_REMOVIDO:       { status: 200, mensagem: 'Publicação removida dos salvos.' },
+ERRO_DESSALVAR_POST:  { status: 500, mensagem: 'Erro ao remover dos salvos.' },
+SALVOS_ENCONTRADOS:   { status: 200, mensagem: 'Posts salvos encontrados.' },
+ERRO_BUSCAR_SALVOS:   { status: 500, mensagem: 'Erro ao buscar posts salvos.' },
+
+// denúncia de usuário
+ID_CATEGORIA_INVALIDO:  { status: 400, mensagem: 'Categoria de denúncia inválida.' },
+DENUNCIA_AUTO_DENUNCIA:  { status: 400, mensagem: 'Você não pode denunciar a si mesmo.' },
+
+// níveis
+NIVEIS_ENCONTRADOS:  { status: 200, mensagem: 'Níveis encontrados.' },
+ERRO_BUSCAR_NIVEIS:  { status: 500, mensagem: 'Erro ao buscar níveis.' },
+
+    POST_SALVO:{
+        status: 201, mensagem: 'Post salvo com sucesso.'
+    },
+    POST_JA_SALVO:{
+        status: 409, mensagem: 'Você já salvou este post.'
+    },
+    POST_SALVO_REMOVIDO:{
+        status: 200, mensagem: 'Post removido dos salvos.'
+    },
+    POST_NAO_ESTAVA_SALVO:{
+        status: 404, mensagem: 'Este post não está nos seus salvos.'
+    },
+    POSTS_SALVOS_ENCONTRADOS:{
+        status: 200, mensagem: 'Posts salvos encontrados.'
+    },
+    ERRO_SALVAR_POST:{
+        status: 500, mensagem: 'Erro ao salvar o post.'
+    },
+    ERRO_REMOVER_POST_SALVO:{
+        status: 500, mensagem: 'Erro ao remover o post dos salvos.'
+    },
+    ERRO_BUSCAR_POSTS_SALVOS:{
+        status: 500, mensagem: 'Erro ao buscar os posts salvos.'
+    }
+
 }
 
 module.exports = config_message

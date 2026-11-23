@@ -3,7 +3,6 @@ const postDAO = require('../../../../model/DAO/Comunidade/Post/postDAO.js')
 const { UploadArquivo, UploadUrl, ExcluirVarias } = require('../../../services/cloudinary.js')
 
 /* ============================ CONSTANTES ============================ */
-
 // Valor da coluna "status" para post visível. Post removido tem status 0.
 const STATUS_ATIVO = 1
 
@@ -14,8 +13,11 @@ const TEXTO_MAX_CARACTERES = 2000
 // também protege o servidor e o Cloudinary)
 const ARQUIVOS_MAX_POR_POST = 10
 
-// Tipos permitidos no array "conteudo" salvo no banco.
-// Ex.: [{ tipo: 'texto', valor: 'Olá' }, { tipo: 'foto', valor: 'https://...' }]
+// Paginação do feed
+const FEED_LIMITE_PADRAO = 12
+const FEED_LIMITE_MAX = 30
+const FEED_BUSCA_MAX_CARACTERES = 100
+
 const TIPOS = ['texto', 'foto', 'video']
 
 /* ======================= HELPERS: RESPOSTAS/ENTRADA ======================= */
@@ -82,6 +84,17 @@ const urlHttpsValida = (valor) => {
     }
 }
 
+// Lê pagina/limite da query com os limites do feed
+const lerPaginacao = (req) => {
+    const pagina = Math.max(parseInt(req.query?.pagina, 10) || 1, 1)
+    const limite = Math.min(
+        Math.max(parseInt(req.query?.limite, 10) || FEED_LIMITE_PADRAO, 1),
+        FEED_LIMITE_MAX
+    )
+
+    return { pagina, limite }
+}
+
 /* ========================= HELPERS: CONTEÚDO ========================= */
 
 // Um item do array de conteúdo precisa ser objeto, ter "tipo" dentro de TIPOS
@@ -127,14 +140,51 @@ const lerConteudo = (valor) => {
 
 // Linha crua do banco -> objeto que a API devolve ao front.
 // Number() no status evita erro quando o driver devolve string ou BigInt.
+// "salvo" vem da query da aba Salvos (1) ou do marcarSalvos; sem isso, false.
 const formatarPost = (p) => ({
     id: p.id,
     data_criacao: p.data_criacao,
     data_atualizacao: p.data_atualizacao,
     status: Number(p.status) === STATUS_ATIVO ? 'ativo' : 'inativo',
     id_usuario: p.id_usuario,
-    conteudo: lerConteudo(p.conteudo)
+    conteudo: lerConteudo(p.conteudo),
+    autor: {
+        id: p.autor_id ?? p.id_usuario,
+        nome_exibicao: p.autor_nome_exibicao ?? null,
+        username_social: p.autor_username_social ?? null,
+        foto_perfil: p.autor_foto_perfil ?? null
+    },
+    total_curtidas: Number(p.total_curtidas ?? 0),
+    total_comentarios: Number(p.total_comentarios ?? 0),
+    curtiu: Boolean(Number(p.curtiu ?? 0)),
+    salvo: Boolean(Number(p.salvo ?? 0))
 })
+
+// Perfil social completo = nome_exibicao E username_social preenchidos
+const perfilSocialCompleto = (u) =>
+    Boolean(u?.nome_exibicao?.trim() && u?.username_social?.trim())
+
+// Id do usuário que está vendo (só para marcar "curtiu" e "salvo"); 0 quando não informado
+const idDoVisualizador = (req) => Number(req.query?.id_usuario) || 0
+
+// Marca "salvo" nos posts crus de uma listagem com UMA query (em vez de uma por post).
+// Sem visualizador (id 0) ou sem posts, devolve a lista como veio (salvo = false).
+// Se a consulta falhar, só registra o erro: perder a marcação de "salvo" não deve
+// derrubar o feed inteiro.
+const marcarSalvos = async (posts, idVisualizador) => {
+    if (!idVisualizador || !posts.length) return posts
+
+    try {
+        const salvos = new Set(
+            await postDAO.GetIdsPostsSalvos(idVisualizador, posts.map(p => p.id))
+        )
+
+        return posts.map(p => ({ ...p, salvo: salvos.has(p.id) ? 1 : 0 }))
+    } catch (error) {
+        console.error('Erro ao marcar posts salvos:', error)
+        return posts
+    }
+}
 
 /* ========================== HELPERS: UPLOADS ========================== */
 
@@ -235,6 +285,16 @@ const criarPost = async (req, res) => {
             return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
         }
 
+        // Só publica quem já criou o perfil social (o feed mostra o autor)
+        const perfil = await postDAO.GetPerfilSocial(id_usuario)
+
+        if (!perfilSocialCompleto(perfil)) {
+            return responderErro(res, config_message.PERFIL_SOCIAL_INCOMPLETO ?? {
+                status: 403,
+                mensagem: 'Crie seu perfil social antes de publicar.'
+            })
+        }
+
         const texto = lerTexto(req)
 
         if (textoInvalido(texto)) {
@@ -287,7 +347,7 @@ const criarPost = async (req, res) => {
         // O post foi criado: não apagar os arquivos
         enviadas.length = 0
 
-        const criado = await postDAO.GetPostById(id_post)
+        const criado = await postDAO.GetPostById(id_post, id_usuario)
 
         return responderSucesso(res, config_message.POST_CRIADO, {
             post: formatarPost(criado)
@@ -321,7 +381,8 @@ const criarPost = async (req, res) => {
 
 // GET /buscar/:postId
 // Busca UM post ativo. Se não existe OU foi removido, a resposta é a mesma (404),
-// para não revelar que um post removido existiu.
+// para não revelar que um post removido existiu. Inclui "curtiu" e "salvo" do
+// visualizador (id_usuario na query).
 const buscarPostPorId = async (req, res) => {
     try {
         const id_post = lerParam(req, 'postId', 'id_post')
@@ -330,14 +391,17 @@ const buscarPostPorId = async (req, res) => {
             return responderErro(res, config_message.ID_POST_INVALIDO)
         }
 
-        const post = await postDAO.GetPostById(id_post)
+        const idVisualizador = idDoVisualizador(req)
+        const post = await postDAO.GetPostById(id_post, idVisualizador)
 
         if (!post || Number(post.status) !== STATUS_ATIVO) {
             return responderErro(res, config_message.POST_NAO_ENCONTRADO)
         }
 
+        const [comSalvo] = await marcarSalvos([post], idVisualizador)
+
         return responderSucesso(res, config_message.POST_ENCONTRADO, {
-            post: formatarPost(post)
+            post: formatarPost(comSalvo)
         })
 
     } catch (error) {
@@ -346,8 +410,47 @@ const buscarPostPorId = async (req, res) => {
     }
 }
 
+// GET /feed?pagina=1&limite=12&ordem=recentes|antigos&busca=&id_usuario=
+// Feed da comunidade: posts ativos de todos os usuários com perfil social completo,
+// já com autor, total_curtidas, total_comentarios, curtiu e salvo (do id_usuario informado).
+// Sem posts, a resposta é sucesso com lista vazia.
+const listarFeed = async (req, res) => {
+    try {
+        const { pagina, limite } = lerPaginacao(req)
+        const ordem = req.query?.ordem === 'antigos' ? 'antigos' : 'recentes'
+        const busca = typeof req.query?.busca === 'string'
+            ? req.query.busca.trim().slice(0, FEED_BUSCA_MAX_CARACTERES)
+            : ''
+
+        const idVisualizador = idDoVisualizador(req)
+
+        const { posts, total } = await postDAO.GetFeedPosts({
+            idVisualizador,
+            limite,
+            offset: (pagina - 1) * limite,
+            ordem,
+            busca
+        })
+
+        const formatados = (await marcarSalvos(posts, idVisualizador)).map(formatarPost)
+
+        return responderSucesso(res, config_message.POSTS_ENCONTRADOS, {
+            pagina,
+            limite,
+            total,
+            quantidade: formatados.length,
+            posts: formatados
+        })
+
+    } catch (error) {
+        console.error('Erro ao listar feed:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_POSTS)
+    }
+}
+
 // GET /buscar/post/:usuarioId
 // Lista os posts ATIVOS de um usuário (perfil público: o id vem da URL).
+// "salvo" é do visualizador (id_usuario na query), não do dono do perfil.
 // Sem posts, a resposta é sucesso com lista vazia.
 const listarPostsPorUsuario = async (req, res) => {
     try {
@@ -358,7 +461,7 @@ const listarPostsPorUsuario = async (req, res) => {
         }
 
         const posts = await postDAO.GetAllPostsAtivosByIdUsuario(id_usuario)
-        const formatados = posts.map(formatarPost)
+        const formatados = (await marcarSalvos(posts, idDoVisualizador(req))).map(formatarPost)
 
         return responderSucesso(res, config_message.POSTS_ENCONTRADOS, {
             quantidade: formatados.length,
@@ -494,11 +597,131 @@ const deletarPost = async (req, res) => {
     }
 }
 
+/* ======================== ENDPOINTS: POSTS SALVOS ======================== */
+
+// POST /salvar/:postId
+// Salva um post ATIVO para o usuário logado. Verificações: ids válidos -> usuário
+// existe -> post existe e ativo (404) -> ainda não salvo (409).
+// O UNIQUE (id_usuario, id_post) do banco é a garantia final: se duas requisições
+// chegarem juntas, a segunda cai no ER_DUP_ENTRY e também vira 409.
+const salvarPost = async (req, res) => {
+    try {
+        const id_post = lerParam(req, 'postId', 'id_post')
+        const id_usuario = idDoUsuarioLogado(req)
+
+        if (!idValido(id_post)) return responderErro(res, config_message.ID_POST_INVALIDO)
+        if (!idValido(id_usuario)) return responderErro(res, config_message.NAO_AUTENTICADO)
+
+        if (!await postDAO.ExisteUsuario(id_usuario)) {
+            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+        }
+
+        const post = await postDAO.GetPostById(id_post, id_usuario)
+
+        if (!post || Number(post.status) !== STATUS_ATIVO) {
+            return responderErro(res, config_message.POST_NAO_ENCONTRADO)
+        }
+
+        if (await postDAO.ExistePostSalvo(id_usuario, id_post)) {
+            return responderErro(res, config_message.POST_JA_SALVO)
+        }
+
+        await postDAO.SalvarPost(id_usuario, id_post)
+
+        return responderSucesso(res, config_message.POST_SALVO, {
+            post: formatarPost({ ...post, salvo: 1 })
+        })
+
+    } catch (error) {
+        // Corrida: o outro request salvou primeiro
+        if (error.code === 'ER_DUP_ENTRY') {
+            return responderErro(res, config_message.POST_JA_SALVO)
+        }
+
+        // Usuário ou post removido entre a validação e o INSERT
+        if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+            return responderErro(res, config_message.POST_NAO_ENCONTRADO)
+        }
+
+        console.error('Erro ao salvar post:', error)
+        return responderErro(res, config_message.ERRO_SALVAR_POST)
+    }
+}
+
+// DELETE /salvar/:postId
+// Remove o post dos salvos do usuário logado. Não exige que o post ainda esteja
+// ativo: o usuário precisa conseguir limpar a lista mesmo se o autor apagou o post.
+// Se o post não estava salvo, responde 404.
+const removerPostSalvo = async (req, res) => {
+    try {
+        const id_post = lerParam(req, 'postId', 'id_post')
+        const id_usuario = idDoUsuarioLogado(req)
+
+        if (!idValido(id_post)) return responderErro(res, config_message.ID_POST_INVALIDO)
+        if (!idValido(id_usuario)) return responderErro(res, config_message.NAO_AUTENTICADO)
+
+        const linhasRemovidas = await postDAO.RemoverPostSalvo(id_usuario, id_post)
+
+        if (!linhasRemovidas) {
+            return responderErro(res, config_message.POST_NAO_ESTAVA_SALVO)
+        }
+
+        return responderSucesso(res, config_message.POST_SALVO_REMOVIDO)
+
+    } catch (error) {
+        console.error('Erro ao remover post salvo:', error)
+        return responderErro(res, config_message.ERRO_REMOVER_POST_SALVO)
+    }
+}
+
+// GET /salvos?pagina=1&limite=12&id_usuario=
+// Aba "Salvos" do perfil: posts ativos que o usuário salvou, do mais recente salvo
+// para o mais antigo. Sem posts salvos, a resposta é sucesso com lista vazia.
+// TEMPORÁRIO: o id vem da URL (/salvos/:usuarioId) ou do body/query, então qualquer
+// pessoa vê os salvos de outra. Com o login por token, use somente req.usuario.id:
+// a aba Salvos é privada do dono.
+const listarPostsSalvos = async (req, res) => {
+    try {
+        const idDaUrl = lerParam(req, 'usuarioId', 'id_usuario')
+        const id_usuario = Number.isNaN(idDaUrl) ? idDoUsuarioLogado(req) : idDaUrl
+
+        if (!idValido(id_usuario)) {
+            return responderErro(res, config_message.NAO_AUTENTICADO)
+        }
+
+        const { pagina, limite } = lerPaginacao(req)
+
+        const { posts, total } = await postDAO.GetPostsSalvosByIdUsuario({
+            idUsuario: id_usuario,
+            limite,
+            offset: (pagina - 1) * limite
+        })
+
+        const formatados = posts.map(formatarPost)
+
+        return responderSucesso(res, config_message.POSTS_SALVOS_ENCONTRADOS, {
+            pagina,
+            limite,
+            total,
+            quantidade: formatados.length,
+            posts: formatados
+        })
+
+    } catch (error) {
+        console.error('Erro ao listar posts salvos:', error)
+        return responderErro(res, config_message.ERRO_BUSCAR_POSTS_SALVOS)
+    }
+}
+
 module.exports = {
     criarPost,
+    listarFeed,
     buscarPostPorId,
     listarPostsPorUsuario,
     listarPostsInativos,
     atualizarPost,
-    deletarPost
+    deletarPost,
+    salvarPost,
+    removerPostSalvo,
+    listarPostsSalvos
 }
