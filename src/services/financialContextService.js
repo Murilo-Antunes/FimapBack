@@ -1,3 +1,4 @@
+// Reúne os dados financeiros disponíveis na conta do usuário.
 /*
  * Monta o contexto financeiro do usuário autenticado para o chat.
  * Consulta as metas no banco e os dados das conexões Open Finance autorizadas,
@@ -11,6 +12,8 @@ const pluggy = require('./pluggyService.js')
 const extrato = require('./extratoCartaoService.js')
 const painel = require('./dashboardService.js')
 const projetar = require('./financialContextProjection.js')
+const planejamento = require('./planningFinancialProjection.js')
+const { dataLocal } = require('./planningDates.js')
 const { selecionarContexto, diaISO, somarDias } = require('./financialContextSelection.js')
 const { VERSAO_CONTEXTO_FINANCEIRO, LIMITE_CONTEXTO_FINANCEIRO_BYTES } = require('./chatValidation.js')
 
@@ -80,7 +83,7 @@ function dataAtualizacao(valor) {
     return Number.isFinite(data.getTime()) ? data.toISOString() : null
 }
 
-async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, sinal) {
+async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, sinal, paraPlanejamento = false) {
     const itemId = conexao.external_connection_id
     if (typeof itemId !== 'string' || !itemId) return {}
     const item = await ler(sinal, () => pluggy.validarItemDoUsuario(itemId, usuario, agora))
@@ -94,7 +97,7 @@ async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, 
     const tarefas = {}
 
     if (['contas', 'cartoes', 'faturas', 'movimentacao'].some((origem) => origens.has(origem))) {
-        const contas = ler(sinal, () => pluggy.listarContas(itemId, { preservarAusencia: true, validarVinculo: true, sinal }))
+        const contas = ler(sinal, () => pluggy.listarContas(itemId, { preservarAusencia: true, validarVinculo: true, sinal, paraPlanejamento }))
         if (origens.has('contas')) {
             tarefas.contas = contas.then((resposta) => {
                 const dados = selecionar(resposta, 'contas')?.filter((conta) => conta.tipo === 'BANK')
@@ -112,7 +115,8 @@ async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, 
                     dateTo: diaISO(periodo.fim),
                     permitirParcial: true,
                     validarVinculo: true,
-                    sinal
+                    sinal,
+                    paraPlanejamento
                 }))
                 if (!selecionar(transacoes, 'transacoes')) return null
                 const doPeriodo = painel.filtrarTransacoesPorPeriodo(transacoes.transacoes, periodo.inicio, periodo.fim)
@@ -143,13 +147,13 @@ async function lerInstituicao(conexao, ordem, usuario, origens, periodo, agora, 
     }
 
     if (origens.has('investimentos')) {
-        tarefas.investimentos = ler(sinal, () => pluggy.listarInvestimentos(itemId, { preservarAusencia: true, validarVinculo: true, sinal })).then((resposta) => {
+        tarefas.investimentos = ler(sinal, () => pluggy.listarInvestimentos(itemId, { preservarAusencia: true, validarVinculo: true, sinal, paraPlanejamento })).then((resposta) => {
             const dados = selecionar(resposta, 'investimentos')
             return registrar(dados, dados?.some((item) => item.valor == null))
         })
     }
     if (origens.has('emprestimos')) {
-        tarefas.emprestimos = ler(sinal, () => pluggy.listarEmprestimos(itemId, { incluirParcelas: true, validarVinculo: true, sinal })).then((resposta) => {
+        tarefas.emprestimos = ler(sinal, () => pluggy.listarEmprestimos(itemId, { incluirParcelas: true, validarVinculo: true, sinal, paraPlanejamento })).then((resposta) => {
             const dados = selecionar(resposta, 'emprestimos')
             return registrar(dados, dados?.some((item) => item.saldoDevedor == null || item.cronogramaParcial || !Array.isArray(item.parcelas) ||
                 item.parcelas.some((parcela) => !parcela.vencimento || parcela.valor == null)))
@@ -205,29 +209,34 @@ function limitar(contexto) {
     return contexto
 }
 
+async function lerFontes(usuario, origens, periodo, consultarMetas, agora, sinalExterno, paraPlanejamento = false) {
+    const sinalPrazo = AbortSignal.timeout(PRAZO_CONSULTA_MS)
+    const sinal = sinalExterno ? AbortSignal.any([sinalExterno, sinalPrazo]) : sinalPrazo
+    const promessaMetas = consultarMetas ? ler(sinal, () => metasDAO.GetAllMetasUsuario(usuario, { propagarErro: true })) : null
+    const conexoes = origens.size ? await ler(sinal, () => conexoesDAO.listarConexoesAtivasPorUsuario(usuario, LIMITE_CONEXOES + 1)) : []
+    const listaDisponivel = Array.isArray(conexoes)
+    const excedeuLimite = listaDisponivel && conexoes.length > LIMITE_CONEXOES
+    const instituicoes = listaDisponivel ? await mapearEmLotes(conexoes.slice(0, LIMITE_CONEXOES), 3,
+        (conexao, indice) => lerInstituicao(conexao, indice + 1, usuario, origens, periodo, agora, sinal, paraPlanejamento)) : []
+    const metas = await promessaMetas
+    sinalExterno?.throwIfAborted()
+
+    const documentos = Object.fromEntries([...origens].map((origem) => [origem,
+        combinar(instituicoes, origem, listaDisponivel && (!paraPlanejamento || conexoes.length > 0), excedeuLimite)]))
+    return { documentos, metas, listaDisponivel, conexoes }
+}
+
 async function construirContextoFinanceiro(usuario, mensagens, { sinal: sinalExterno, agora = new Date() } = {}) {
     sinalExterno?.throwIfAborted()
     const selecao = selecionarContexto(mensagens, agora)
     if (!selecao) return null
     const { modulos, assunto, inicio, fim } = selecao
     const periodo = { inicio, fim }
-    const sinalPrazo = AbortSignal.timeout(PRAZO_CONSULTA_MS)
-    const sinal = sinalExterno ? AbortSignal.any([sinalExterno, sinalPrazo]) : sinalPrazo
     const origens = new Set(modulos.filter((nome) => !['patrimonio', 'metas', 'comprometimento'].includes(nome)))
     if (modulos.includes('patrimonio')) DEPENDENCIAS_PATRIMONIO.forEach((origem) => origens.add(origem))
     const movimentacaoBancaria = modulos.includes('contas') && /\b(?:movimenta\w*|extratos?|receitas?|despesas?|gastei|gastos?)\b/.test(assunto)
     if (movimentacaoBancaria) origens.add('movimentacao')
-
-    const promessaMetas = modulos.includes('metas') ? ler(sinal, () => metasDAO.GetAllMetasUsuario(usuario, { propagarErro: true })) : null
-    const conexoes = origens.size ? await ler(sinal, () => conexoesDAO.listarConexoesAtivasPorUsuario(usuario, LIMITE_CONEXOES + 1)) : []
-    const listaDisponivel = Array.isArray(conexoes)
-    const excedeuLimite = listaDisponivel && conexoes.length > LIMITE_CONEXOES
-    const instituicoes = listaDisponivel ? await mapearEmLotes(conexoes.slice(0, LIMITE_CONEXOES), 3,
-        (conexao, indice) => lerInstituicao(conexao, indice + 1, usuario, origens, periodo, agora, sinal)) : []
-    const metas = await promessaMetas
-    sinalExterno?.throwIfAborted()
-
-    const documentos = Object.fromEntries([...origens].map((origem) => [origem, combinar(instituicoes, origem, listaDisponivel, excedeuLimite)]))
+    const { documentos, metas, listaDisponivel, conexoes } = await lerFontes(usuario, origens, periodo, modulos.includes('metas'), agora, sinalExterno)
     const dados = {}
     for (const nome of modulos) {
         if (nome === 'comprometimento') continue
@@ -279,4 +288,15 @@ async function construirContextoFinanceiro(usuario, mensagens, { sinal: sinalExt
     })
 }
 
-module.exports = { construirContextoFinanceiro }
+async function construirContextoPlanejamento(usuario, { sinal, agora = new Date(), mensagens = [], somenteCredito = false } = {}) {
+    sinal?.throwIfAborted()
+    const hoje = dataLocal(agora)
+    const [ano, mes] = hoje.split('-').map(Number)
+    const periodo = { inicio: new Date(Date.UTC(ano, mes - 4, 1)), fim: new Date(Date.UTC(ano, mes - 1, 1)) }
+    const origens = new Set(somenteCredito ? ['emprestimos'] : ['contas', 'movimentacao', 'cartoes', 'faturas', 'investimentos', 'emprestimos'])
+    const { documentos, metas, conexoes } = await lerFontes(usuario, origens, periodo, !somenteCredito, agora, sinal, true)
+    if (somenteCredito) return planejamento.projetarCredito(documentos.emprestimos, hoje, mensagens)
+    return planejamento.projetar(documentos, metas, periodo, hoje, mensagens, conexoes)
+}
+
+module.exports = { construirContextoFinanceiro, construirContextoPlanejamento }

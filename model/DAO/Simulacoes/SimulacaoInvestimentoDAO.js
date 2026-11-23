@@ -1,3 +1,4 @@
+// Busca e grava as simulações de investimento.
 const knex = require('knex')(require('../../Database_config_knex/KnexFile.js').development)
 
 const tabela = 'tbl_simulacao_investimento'
@@ -41,12 +42,17 @@ const consultarSimulacaoInvestimento = async (simulacaoId, usuarioId) =>
             .first()
     )
 
-const criarSimulacaoInvestimento = async (usuarioId, dados) => {
-    const [id] = await knex(tabela).insert({
+const inserirSimulacao = async (usuarioId, dados, conexao = knex) => {
+    const [id] = await conexao(tabela).insert({
         ...dados,
         id_usuario: usuarioId,
-        data_criacao: knex.fn.now()
+        data_criacao: conexao.fn.now()
     })
+    return id
+}
+
+const criarSimulacaoInvestimento = async (usuarioId, dados) => {
+    const id = await inserirSimulacao(usuarioId, dados)
     return consultarSimulacaoInvestimento(id, usuarioId)
 }
 
@@ -66,6 +72,7 @@ module.exports = {
     listarSimulacoesInvestimento,
     consultarSimulacaoInvestimento,
     criarSimulacaoInvestimento,
+    inserirSimulacao,
     atualizarSimulacaoInvestimento,
     removerSimulacaoInvestimento
 }

@@ -1,8 +1,11 @@
+<!-- Explica como configurar e testar o chat com IA. -->
 # Integração do Chat IA FIMAP
 
 Implementação na branch remota `minhas-alteracoes` (nome confirmado no GitHub em 17/11/2026).
 O frontend chama este backend com o JWT do usuário. Só o backend envia o token compartilhado ao Worker.
 Nenhum segredo do Worker deve chegar ao navegador.
+
+O fluxo de propostas e confirmação está documentado em [Planejamento financeiro do Copilot](copilot-planning.md).
 
 ## Configuração e banco
 

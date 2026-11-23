@@ -1,3 +1,4 @@
+// Organiza o caminho entre a pergunta do usuário e a resposta salva.
 /*
  * Coordena a geração da resposta no chat autenticado. Recupera o histórico
  * recente, solicita o contexto financeiro quando habilitado e envia os dados
@@ -9,6 +10,7 @@ const dao = require('../../model/DAO/MensagemChat/RequisicaoChatDAO.js')
 const { formatarMensagem } = require('../../model/DAO/MensagemChat/MensagemChatDAO.js')
 const ia = require('./aiChatService.js')
 const financeiro = require('./financialContextService.js')
+const { planejar } = require('./planningService.js')
 const { criarErro, validarMensagens } = require('./chatValidation.js')
 
 const erroEstado = (r) => criarErro(r.status_erro || 409,
@@ -20,7 +22,8 @@ const resultado = async (r) => {
     const par = await dao.resultado(r)
     return { id_chat: r.id_chat, requisicao_id: r.requisicao_id,
         mensagem_usuario: formatarMensagem(par.mensagem_usuario),
-        mensagem_assistente: formatarMensagem(par.mensagem_assistente) }
+        mensagem_assistente: formatarMensagem(par.mensagem_assistente),
+        ...(par.mensagem_assistente.acoes_financeiras?.length && { acoes_financeiras: par.mensagem_assistente.acoes_financeiras }) }
 }
 const consultar = async (usuario, uuid) => {
     const r = await dao.consultar(usuario, uuid)
@@ -62,8 +65,12 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
         combinado.throwIfAborted()
         const config = ia.obterConfiguracaoPrivada()
         const contexto = validarMensagens([...(await dao.contexto(r)), { role: 'user', content: pergunta }])
+        const planejamento = config?.planejamentoHabilitado ? await planejar({
+            usuario, mensagens: contexto, carregarRascunhos: () => dao.rascunhos(r),
+            buscarFinanceiro: financeiro.construirContextoPlanejamento, config, sinal: combinado
+        }) : null
         let contextoFinanceiro
-        if (config?.versaoContextoFinanceiro) {
+        if (!planejamento && config?.versaoContextoFinanceiro) {
             try {
                 contextoFinanceiro = await financeiro.construirContextoFinanceiro(usuario, contexto, { sinal: combinado })
             } catch {
@@ -74,10 +81,12 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
         combinado.throwIfAborted()
         const atual = await dao.consultar(usuario, uuid)
         if (atual.estado !== 'gerando') throw erroEstado(atual)
-        const texto = await ia.gerarResposta(contexto, trecho, combinado, contextoFinanceiro)
+        const texto = planejamento?.texto ?? await ia.gerarResposta(contexto, trecho, combinado, contextoFinanceiro)
         combinado.throwIfAborted()
-        const concluida = await dao.concluir(r, texto)
-        return await resultado(concluida)
+        const concluida = await dao.concluir(r, texto, planejamento?.propostas)
+        const salvo = await resultado(concluida)
+        if (planejamento) await trecho(texto)
+        return salvo
     } catch (causa) {
         const error = prazo.aborted ? criarErro(504, 'A IA demorou demais para responder.', 'IA_TIMEOUT')
             : controle.signal.aborted ? controle.signal.reason

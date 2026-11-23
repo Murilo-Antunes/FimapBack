@@ -1,3 +1,4 @@
+// Envia as mensagens para a IA e recebe a resposta em partes.
 /*
  * Envia as mensagens do chat ao Worker da Cloudflare e recebe a resposta.
  * Na rota privada, inclui o contexto financeiro quando a versão configurada
@@ -25,7 +26,11 @@ const obterConfiguracao = () => {
     const versaoContextoFinanceiro = url.protocol === 'https:' && url.pathname === '/v1/ia/chat' &&
         !url.search && !url.hash && !!token && process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION === String(VERSAO_CONTEXTO_FINANCEIRO)
         ? VERSAO_CONTEXTO_FINANCEIRO : null
-    return { url: url.toString(), token, versaoContextoFinanceiro }
+    const transportePrivado = url.protocol === 'https:' ||
+        (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    const planejamentoHabilitado = transportePrivado && !!token && !url.username && !url.password && !url.search && !url.hash &&
+        url.pathname.replace(/\/$/, '') === '/v1/ia/chat' && process.env.CLOUDFLARE_PLANNING_VERSION === '2'
+    return { url: url.toString(), token, versaoContextoFinanceiro, planejamentoHabilitado }
 }
 const obterConfiguracaoPrivada = () => {
     const config = obterConfiguracao()
