@@ -22,6 +22,7 @@ router.get("/usuario/social/:username_social",
     usuarioController.buscarUsuarioPorUsernameSocial)
 
 router.use(autenticar, autorizarUsuario)
+
 router.post("/alterar/verificar-senha-atual/:id_usuario", usuarioController.verificarSenhaAtual)
 
 // Atualizar usuário

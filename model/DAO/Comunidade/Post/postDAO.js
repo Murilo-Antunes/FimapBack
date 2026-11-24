@@ -361,50 +361,6 @@ const RemoverPostSalvo = async (idUsuario, idPost) => {
     }
 }
 
-// Pesquisa posts utilizando Full-Text Search.
-// Retorna posts ativos que correspondem ao termo pesquisado.
-const BuscarPostsFullText = async ({
-    busca,
-    idVisualizador = 0,
-    offset,
-    limite
-}) => {
-    if (typeof busca !== 'string' || !busca.trim()) {
-        return []
-    }
-
-    const sql = `
-        ${SQL_POST_COM_AUTOR}
-        where p.status = ?
-        and coalesce(u.visibilidade, 1) = 1
-        and u.perfil_social_ativo = 1
-        and not exists (
-            select 1 from tbl_bloqueio_usuario b
-            where b.id_bloqueador = u.id and b.id_bloqueado = ?
-        )
-        and match(p.conteudo) against (? IN NATURAL LANGUAGE MODE)
-        order by match(p.conteudo) against (? IN NATURAL LANGUAGE MODE) desc,
-                 p.data_criacao desc
-        limit ? offset ?`
-
-    try {
-        const [posts] = await knexConex.raw(sql, [
-            Number(idVisualizador) || 0,
-            STATUS_ATIVO,
-            idVisualizador,
-            busca.trim(),
-            busca.trim(),
-            limite,
-            offset
-        ])
-
-        return posts
-    } catch (error) {
-        console.error('Erro ao realizar Full-Text Search:', error)
-        throw error
-    }
-}
-
 module.exports = {
     CreatePost,
     UpdatePost,
@@ -421,6 +377,5 @@ module.exports = {
     ExistePostSalvo,
     GetIdsPostsSalvos,
     GetPostsSalvosByIdUsuario,
-    ContarSalvosPorPost,
-    BuscarPostsFullText
+    ContarSalvosPorPost
 }

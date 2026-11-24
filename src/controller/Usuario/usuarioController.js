@@ -7,6 +7,7 @@ const usuarioSocialDAO = require('../../../model/DAO/Usuario/usuarioSocialDAO.js
 const { UploadArquivo, ExcluirVarias } = require('../../services/cloudinary.js')
 const { enviarOTP } = require('../../config/email.js')
 const { gerarToken } = require('../../services/jwtService.js')
+const middlewarePrivacidade= require('../../middlewares/privacidadePerfil.js')
 
 const { verificarAcesso, idDoVisualizador, responderAcessoNegado } = require('../../middlewares/privacidadePerfil.js')
 
@@ -26,6 +27,8 @@ const CAMPOS_EDITAVEIS = [
     'localizacao_estado',
     'visibilidade'
 ]
+
+const idDoVisualizador = (req) => Number(req.usuario?.id) || 0
 
 // username_social: 3 a 30 caracteres [a-z0-9._], sem . ou _ no início/fim nem em sequência
 const REGEX_USERNAME_SOCIAL = /^(?![._])(?!.*[._]{2})[a-z0-9._]{3,30}(?<![._])$/
@@ -606,10 +609,10 @@ const buscarUsuarioPorUsernameSocial = async (req, res) => {
             return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' })
         }
 
-        const acesso = await verificarAcesso(idDoVisualizador(req), Number(usuario.id))
+        const acesso = await middlewarePrivacidade.verificarAcesso(idDoVisualizador(req), Number(usuario.id))
 
         if (acesso === 'inexistente' || acesso === 'indisponivel') {
-            return responderAcessoNegado(res, acesso)
+            return middlewarePrivacidade.responderAcessoNegado(res, acesso)
         }
 
         if (acesso === 'restrito') {
