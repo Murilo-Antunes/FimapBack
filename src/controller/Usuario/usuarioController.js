@@ -28,8 +28,6 @@ const CAMPOS_EDITAVEIS = [
     'visibilidade'
 ]
 
-const idDoVisualizador = (req) => Number(req.usuario?.id) || 0
-
 // username_social: 3 a 30 caracteres [a-z0-9._], sem . ou _ no início/fim nem em sequência
 const REGEX_USERNAME_SOCIAL = /^(?![._])(?!.*[._]{2})[a-z0-9._]{3,30}(?<![._])$/
 

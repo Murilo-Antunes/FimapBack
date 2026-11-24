@@ -5,8 +5,6 @@ const autorizarUsuario = require('../middlewares/autorizarUsuario.js')
 const { exigirAcessoAoPerfil, bloquearSeguirPerfilPrivado } = require('../middlewares/privacidadePerfil.js')
 const express = require("express")
 const router = express.Router()
-const { exigirAcessoAoPerfil, bloquearSeguirPerfilPrivado } = require('../middlewares/privacidadePerfil.js')
-router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 router.use(autenticar)
 
