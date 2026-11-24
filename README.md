@@ -28,14 +28,6 @@ Veja os corpos das requisições, variáveis de ambiente, eventos SSE e requisit
 1. Clone o repositório e copie `.env.example` para `.env` na raiz.
 2. Obtenha o `CLOUDFLARE_CHAT_TOKEN` com o responsável pelo Worker e configure `JWT_SECRET` localmente. Para testar dados bancários, configure também `CLIENT_ID` e `CLIENT_SECRET` da Pluggy e use uma conta de teste com uma conexão autorizada.
 3. Defina `CLOUDFLARE_FINANCIAL_CONTEXT_VERSION=1` se o `/health` do Worker informar `contextoFinanceiroVersao: 1`. Mantenha a URL HTTPS do Worker com o caminho `/v1/ia/chat`.
-4. Preencha `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` e `DB_NAME` para um banco MySQL com o esquema e as migrations do projeto. Execute `npm install` e `npm start`, entre no site e pergunte no chat autenticado sobre as contas ou metas do usuário de teste.
+4. Confirme a conexão MySQL em `model/Database_config_knex/KnexFile.js` e use um banco de teste com o esquema e as migrations do projeto. Execute `npm install` e `npm start`, entre no site e pergunte no chat autenticado sobre as contas ou metas do usuário de teste.
 
 O `.env` deve ficar fora do Git. Compartilhe as credenciais pelo canal privado da equipe.
-
-## Executar o backend na nuvem
-
-Use um serviço que execute Node.js 22.13 ou superior. Configure `npm ci --omit=dev` para instalar dependências, `npm start` para iniciar a API e `/health` para verificar a inicialização. O servidor usa a variável `PORT` fornecida pela plataforma.
-
-Cadastre as mesmas variáveis de banco e do chat no painel de ambiente do serviço. Para MySQL gerenciado com TLS, use `DB_SSL=true` e, quando o provedor exigir, `DB_SSL_CA` com o certificado CA em PEM. A API Express chama o Worker de IA publicado pela URL HTTPS configurada.
-
-Valide o esquema e o histórico de migrations antes de disponibilizar o serviço. Em um banco existente, faça backup e confira as migrations pendentes antes de rodar `npm run db:migrate`. O script `Database/Script_Fimap.sql` recria o banco e deve ser reservado à preparação de ambientes descartáveis. Aponte o frontend para a URL pública da API e teste o chat autenticado com uma conta de teste.
