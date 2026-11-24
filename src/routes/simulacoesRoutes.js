@@ -5,7 +5,7 @@ const simulacaoInvestimentoController = require('../controller/Simulacoes/Simula
 const simulacaoAmortizacaoController = require('../controller/Simulacoes/SimulacaoAmortizacaoController.js')
 const indicadoresController = require('../controller/Simulacoes/IndicadoresController.js')
 
-// Sem JWT por enquanto: as rotas de simulação recebem o dono em ?id_usuario=
+// As operações usam o ID autenticado pelo JWT, nunca o ID informado pelo cliente.
 
 router.get('/indicadores', indicadoresController.consultarIndicadores)
 

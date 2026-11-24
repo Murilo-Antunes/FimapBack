@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const postController = require("../controller/Comunidade/Post/postController.js");
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 // Montada em /v1/comunidade/posts
 
@@ -10,6 +11,8 @@ router.post("/criar", postController.criarPost);
 
 // Posts salvos — ANTES das rotas por id/usuário pra não colidir com elas.
 router.post("/salvar", postController.salvarPost);                                   // NOVA
+router.post("/salvar/alternar", postController.alternarSalvarPost);                  // NOVA
+router.get("/salvar/verificar/:id_post", postController.verificarPostSalvo);         // NOVA
 router.delete("/salvar/:id_post", postController.removerPostSalvo);                 // NOVA
 router.get("/salvos/:id_usuario", postController.listarPostsSalvos);           // NOVA
 

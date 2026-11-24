@@ -29,7 +29,7 @@ const responderSucesso = (res, cfg, dados = {}) =>
 // enviar o id de outro usuário e se passar por ele. Remova o fallback quando todas as
 // rotas de denúncia passarem pelo middleware (ajuste "req.usuario?.id" ao nome que ele usa).
 const idDoUsuarioLogado = (req) =>
-    Number(req.usuario?.id ?? req.body?.id_usuario ?? req.query?.id_usuario)
+    Number(req.usuario?.id)
 
 // Lê um texto do body: null (ausente ou não é string) | string com trim (pode ser '')
 const lerTexto = (valor) => (typeof valor === 'string' ? valor.trim() : null)

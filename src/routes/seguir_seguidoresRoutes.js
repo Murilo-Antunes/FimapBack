@@ -1,6 +1,7 @@
 const seguir_seguidoresContorller  = require("../controller/Seguir_Seguidores/seguir_seguidoresController.js")
 const express = require("express")
 const router = express.Router()
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 
 // Cadastro e autenticação por OTP

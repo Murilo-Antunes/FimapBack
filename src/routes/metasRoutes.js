@@ -2,6 +2,7 @@ const express = require("express")
 const router = express.Router()
 
 const MetaController = require("../controller/Metas/MetasController.js")
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 
 // CRUD de metas

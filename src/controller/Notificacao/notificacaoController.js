@@ -263,6 +263,10 @@ const buscarNotificacaoPorId = async (req, res) => {
             return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
         }
 
+        if (Number(notificacao.id_usuario) !== Number(req.usuario?.id)) {
+            return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
+        }
+
         const mensagem = config_message.NOTIFICACAO_ENCONTRADA
 
         return res.status(mensagem.status).json({
@@ -294,13 +298,17 @@ const marcarComoLida = async (req, res) => {
             return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
         }
 
+        if (Number(notificacao.id_usuario) !== Number(req.usuario?.id)) {
+            return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
+        }
+
         if (Number(notificacao.lida) === 1) {
             return respostaErro(res, config_message.NOTIFICACAO_JA_LIDA)
         }
 
         const resultado = await NotificacaoModel.MarkAsRead(
             id_notificacao,
-            notificacao.id_usuario
+            req.usuario.id
         )
 
         if (resultado === null) {
@@ -372,9 +380,13 @@ const deletarNotificacao = async (req, res) => {
             return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
         }
 
+        if (Number(notificacao.id_usuario) !== Number(req.usuario?.id)) {
+            return respostaErro(res, config_message.NOTIFICACAO_NAO_ENCONTRADA)
+        }
+
         const resultado = await NotificacaoModel.DeleteNotification(
             id_notificacao,
-            notificacao.id_usuario
+            req.usuario.id
         )
 
         if (resultado === null) {

@@ -2,6 +2,7 @@ const express = require('express');
 const SessaoController = require('../controller/Sessao/SessaoController');
 
 const router = express.Router();
+router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'));
 
 router.post('/criar', SessaoController.criarSessao);
 router.get('/:id', SessaoController.obterSessaoPorId);

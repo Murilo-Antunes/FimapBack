@@ -2,8 +2,8 @@ const express = require("express")
 const router = express.Router()
 
 const notificacaoController = require("../controller/Notificacao/notificacaoController.js")
-
-router.post('/criar', notificacaoController.criarNotificacao)
+router.use(require('../middlewares/autorization.js'))
+router.use('/usuarios/:id_usuario', require('../middlewares/autorizarUsuario.js'))
 
 router.get('/usuarios/:id_usuario/notificacoes', notificacaoController.buscarNotificacoesUsuario)
 router.get('/:id_notificacao', notificacaoController.buscarNotificacaoPorId)

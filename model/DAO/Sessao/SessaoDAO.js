@@ -39,13 +39,14 @@ const CreateSessao = async (sessao) => {
 };
 
 // Buscar sessão pelo ID
-const GetSessaoById = async (id) => {
+const GetSessaoById = async (id, id_usuario) => {
     const sql = `
-        SELECT * FROM tbl_sessao WHERE id = ?
+        SELECT id, data_criacao, data_expiracao, ultimo_uso, data_revogacao, id_usuario, id_dispositivo
+        FROM tbl_sessao WHERE id = ? AND id_usuario = ?
     `;
 
     try {
-        const [result] = await knexConex.raw(sql, [id]);
+        const [result] = await knexConex.raw(sql, [id, id_usuario]);
         return result[0] || null;
     } catch (error) {
         console.error('Erro ao buscar sessão por ID:', error);
@@ -70,11 +71,11 @@ const UpdateSessao = async (sessao) => {
     const sql = `
         UPDATE tbl_sessao
         SET ${sets.join(', ')}
-        WHERE id = ?
+        WHERE id = ? AND id_usuario = ?
     `;
 
     try {
-        const [result] = await knexConex.raw(sql, [...valores, sessao.id]);
+        const [result] = await knexConex.raw(sql, [...valores, sessao.id, sessao.id_usuario]);
         return result.affectedRows > 0; // Retorna true se alguma linha foi afetada
     } catch (error) {
         console.error('Erro ao atualizar sessão:', error);
@@ -83,13 +84,13 @@ const UpdateSessao = async (sessao) => {
 };
 
 // Deletar sessão
-const DeleteSessao = async (id) => {
+const DeleteSessao = async (id, id_usuario) => {
     const sql = `
-        DELETE FROM tbl_sessao WHERE id = ?
+        DELETE FROM tbl_sessao WHERE id = ? AND id_usuario = ?
     `;
 
     try {
-        const [result] = await knexConex.raw(sql, [id]);
+        const [result] = await knexConex.raw(sql, [id, id_usuario]);
         return result.affectedRows > 0; // Retorna true se alguma linha foi afetada
     } catch (error) {
         console.error('Erro ao deletar sessão:', error);

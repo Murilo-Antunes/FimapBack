@@ -36,8 +36,7 @@ const lerParam = (req, ...nomes) => {
 }
 
 // TEMPORÁRIO: substituir por req.usuario.id quando o JWT estiver implementado.
-const idDoUsuarioLogado = (req) =>
-    Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 /* ========================= HELPERS: FORMATAÇÃO ========================= */
 

@@ -3,6 +3,6 @@ const knexConfig = require('./../../Database_config_knex/KnexFile.js')
 
 const knexConex = knex(knexConfig.development)
 
-const LiatarRanking = async () => {
+const ListarRanking = async () => {
     
 }

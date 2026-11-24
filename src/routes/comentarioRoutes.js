@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const comentarioController = require('../../src/controller/Comunidade/Comentario/comentarioController.js');
+router.use(require('../../src/middlewares/autorization.js'), require('../../src/middlewares/autorizarUsuario.js'))
 
 router.post("/comentar", comentarioController.criarComentario)
 

@@ -73,10 +73,10 @@ const GetAllCodigoOTP = async () => {
 const DesativarCodigoOTP = async (id_usuario, codigo) => {
     const sql = `update tbl_codigo_otp
         set ativo = false
-        where id_usuario = ? and codigo = ? and ativo = true`
+        where id_usuario = ? and codigo = ? and ativo = true and data_expiracao > ?`
 
     try {
-        const result = await knexConex.raw(sql, [id_usuario, codigo])
+        const result = await knexConex.raw(sql, [id_usuario, codigo, new Date()])
         return result?.[0]?.affectedRows > 0
     } catch (error) {
         console.error('Erro ao desativar OTP:', error)

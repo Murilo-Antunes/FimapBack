@@ -4,9 +4,10 @@ const jwt = require('jsonwebtoken')
 const config_message = require('../controller/modulo/configMensagens.js')
 
 const autenticar = (req, res, next) => {
-    const [tipo, token] = (req.headers.authorization || '').split(' ')
+    const partes = (req.headers.authorization || '').trim().split(/\s+/)
+    const [tipo, token] = partes
 
-    if (tipo !== 'Bearer' || !token) {
+    if (tipo !== 'Bearer' || !token || partes.length !== 2) {
         return res.status(config_message.TOKEN_AUSENTE.status).json({
             sucesso: false,
             codigo: 'TOKEN_AUSENTE',
@@ -14,7 +15,7 @@ const autenticar = (req, res, next) => {
         })
     }
 
-    if (!process.env.JWT_SECRET) {
+    if (!require('../services/jwtService.js').segredoConfigurado()) {
         return res.status(config_message.ERRO_LOGIN.status).json({
             sucesso: false,
             codigo: 'AUTH_CONFIGURACAO',

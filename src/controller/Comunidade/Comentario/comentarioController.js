@@ -35,7 +35,7 @@ const lerParam = (req, ...nomes) => {
 // TEMPORÁRIO: lê o id do body ou da query, então qualquer pessoa pode enviar o id
 // de outro usuário e se passar por ele. Quando o login com token estiver pronto,
 // troque por req.usuario.id (vindo do middleware de autenticação).
-const idDoUsuarioLogado = (req) => Number(req.body?.id_usuario ?? req.query?.id_usuario)
+const idDoUsuarioLogado = (req) => Number(req.usuario?.id)
 
 // Lê a mensagem do comentário do body.
 // Retorna: null (ausente ou não é string) | string com trim (pode ser '')
@@ -248,7 +248,7 @@ const listarComentariosPorPost = async (req, res) => {
 
         // [] = post sem comentários (sucesso)
         // id_usuario (query) só serve para marcar "curtiu"; sem ele, curtiu = false
-        const idVisualizador = Number(req.query?.id_usuario) || 0
+        const idVisualizador = Number(req.usuario?.id) || 0
         const comentarios = await comentarioDAO.GetAllComentariosByIdPost(id_post, idVisualizador)
 
         const lista = req.query?.formato === 'lista'
@@ -281,7 +281,7 @@ const listarRespostas = async (req, res) => {
             return responderErro(res, config_message.COMENTARIO_NAO_ENCONTRADO)
         }
 
-        const respostas = await comentarioDAO.GetRespostasByIdComentarioPai(id_comentario, Number(req.query?.id_usuario) || 0)
+        const respostas = await comentarioDAO.GetRespostasByIdComentarioPai(id_comentario, Number(req.usuario?.id) || 0)
 
         const formatadas = respostas.map(formatarComentarioComTotal)
 

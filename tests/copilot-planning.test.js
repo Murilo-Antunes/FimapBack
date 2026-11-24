@@ -239,7 +239,7 @@ test('HTTP v2 monta, revisa, confirma e reabre cartões com Worker simulado e ba
             return { contexto: null, contrato: { saldo_devedor: 8700.25, prazo: 22, taxa: 12, sistema_calculo: 'SAC' } }
         return /carro/i.test(mensagens[0].content) ? financeiroExemplo : { contexto: null }
     })
-    const env = { JWT_SECRET: 'jwt-local-de-teste', CLOUDFLARE_WORKER_URL: 'https://worker.test/v1/ia/chat',
+    const env = { JWT_SECRET: 'jwt-local-de-teste-com-32-bytes-de-teste', CLOUDFLARE_WORKER_URL: 'https://worker.test/v1/ia/chat',
         CLOUDFLARE_CHAT_TOKEN: 'token-privado-de-teste', CLOUDFLARE_PLANNING_VERSION: '2',
         CLOUDFLARE_FINANCIAL_CONTEXT_VERSION: '' }
     const anterior = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]))

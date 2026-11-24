@@ -90,9 +90,9 @@ test('rotas HTTP reais: login, JWT, isolamento, histórico, SSE, recuperação, 
         delete process.env.JWT_SECRET
         result = await login('senha-teste')
         process.env.JWT_SECRET = secret
-        assert.equal(result.status, 500)
+        assert.equal(result.status, 503)
         assert.deepEqual(await result.json(), {
-            sucesso: false, codigo: 'AUTH_CONFIGURACAO', mensagem: 'Não foi possível realizar o login.'
+            sucesso: false, codigo: 'JWT_CONFIGURACAO', mensagem: 'A autenticação não está configurada com um segredo seguro.'
         })
         result = await login('senha-teste')
         assert.equal(result.status, 200)
