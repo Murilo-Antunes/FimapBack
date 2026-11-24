@@ -8,10 +8,9 @@ router.use(require('../middlewares/autorization.js'), require('../middlewares/au
 
 // Criar
 router.post("/criar", postController.criarPost);
-
-// Posts salvos — ANTES das rotas por id/usuário pra não colidir com elas.
 router.post("/salvar", postController.salvarPost);                                   // NOVA
 router.post("/salvar/alternar", postController.alternarSalvarPost);                  // NOVA
+
 router.get("/salvar/verificar/:id_post", postController.verificarPostSalvo);         // NOVA
 router.delete("/salvar/:id_post", postController.removerPostSalvo);                 // NOVA
 router.get("/salvos/:id_usuario", postController.listarPostsSalvos);           // NOVA
@@ -21,6 +20,7 @@ router.get("/feed", postController.listarFeed);                                 
 router.get("/buscar/post/:id_usuario", postController.listarPostsPorUsuario);
 router.get("/inativos/:id_usuario", postController.listarPostsInativos);
 router.get("/buscar/:id_post", postController.buscarPostPorId);
+router.get("/buscar/post/text", postController.buscarPostPorTexto)
 
 // Atualizar e deletar
 router.patch("/atualizar/:id_post", postController.atualizarPost);

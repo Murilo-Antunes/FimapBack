@@ -360,22 +360,19 @@ const RemoverPostSalvo = async (idUsuario, idPost) => {
 // Retorna posts ativos que correspondem ao termo pesquisado.
 const BuscarPostsFullText = async ({
     busca,
-    idVisualizador = 0,
-    limite = 10,
-    offset = 0
+    idVisualizador = 0
 }) => {
     if (typeof busca !== 'string' || !busca.trim()) {
         return []
     }
 
-    const sql = `
+      const sql = `
         ${SQL_POST_COM_AUTOR}
         where p.status = ?
         and match(p.conteudo) against (? IN NATURAL LANGUAGE MODE)
         order by match(p.conteudo) against (? IN NATURAL LANGUAGE MODE) desc,
                  p.data_criacao desc
-        limit ? offset ?
-    `
+        ${Number(offset) > 0 ? 'offset ?' : ''}`
 
     try {
         const [posts] = await knexConex.raw(sql, [
@@ -383,7 +380,6 @@ const BuscarPostsFullText = async ({
             STATUS_ATIVO,
             busca.trim(),
             busca.trim(),
-            Number(limite),
             Number(offset)
         ])
 

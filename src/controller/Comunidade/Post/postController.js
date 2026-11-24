@@ -762,6 +762,44 @@ const listarPostsSalvos = async (req, res) => {
     }
 }
 
+const buscarPostPorTexto = async (req, res) => {
+    try {
+        const id_usuario = idDoUsuarioLogado(req)
+
+        const { busca, offset = 0 } = req.query
+
+        if (!busca || typeof busca !== 'string' || !busca.trim()) {
+            return res.status(400).json({
+                sucesso: false,
+                mensagem: 'Informe um texto válido para realizar a pesquisa.'
+            })
+        }
+
+        const posts = await postModel.BuscarPostsFullText({
+            busca: busca.trim(),
+            idVisualizador: id_usuario,
+            offset: Number(offset) || 0
+        })
+
+        return res.status(200).json({
+            sucesso: true,
+            mensagem: posts.length > 0
+                ? 'Posts encontrados com sucesso.'
+                : 'Nenhum post encontrado.',
+            quantidade: posts.length,
+            posts
+        })
+
+    } catch (error) {
+        console.error('Erro ao buscar posts por texto:', error)
+
+        return res.status(500).json({
+            sucesso: false,
+            mensagem: 'Erro interno ao realizar a pesquisa dos posts.'
+        })
+    }
+}
+
 module.exports = {
     criarPost,
     listarFeed,
@@ -774,5 +812,6 @@ module.exports = {
     alternarSalvarPost,
     verificarPostSalvo,
     removerPostSalvo,
-    listarPostsSalvos
+    listarPostsSalvos,
+    buscarPostPorTexto
 }
