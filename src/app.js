@@ -58,7 +58,7 @@ app.post('/v1/ia/chat-publico', limitarChat, chatPublicoController.conversarPubl
 app.use('/v1/ia/chats', mensagemChatRoutes)
 app.use('/v1/ia/chat', chatRoutes)
 app.use('/v1/ia/recomendacoes', recommendationRoutes)
-app.use('/v1/openfinance', openFinanceRoutes)
+// Keep public user auth routes ahead of the protected Open Finance router.
 app.use('/v1/openfinance/usuario', usuarioRoutes)
 app.use('/v1/openfinance', openFinanceRoutes)
 app.use('/v1/openfinance/metas', metasRoutes)

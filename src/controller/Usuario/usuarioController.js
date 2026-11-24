@@ -591,28 +591,45 @@ const buscarUsuarioPorUsername = async (req, res) => {
 }
 
 const buscarUsuarioPorUsernameSocial = async (req, res) => {
-    try {
-        const username_social = typeof req.params?.username_social === 'string' ? req.params.username_social.trim() : ''
+        try {
+        const username_social = typeof req.params?.username === 'string' ? req.params.username.trim() : ''
 
         if (!username_social) {
-            return responderErro(res, config_message.USERNAME_INVALIDO || config_message.ERRO_INTERNO)
+            return res.status(400).json({ sucesso: false, mensagem: 'Informe um username válido.' })
         }
 
-        const usuario = await usuarioModel.BuscarUsuarioPorUsernameSocial(username_social)
+        const usuario = await usuarioDAO.BuscarUsuarioPorUsernameSocial(username_social)
 
         if (!usuario) {
-            return responderErro(res, config_message.USUARIO_NAO_ENCONTRADO)
+            return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' })
         }
 
-        return res.status(config_message.USUARIO_ENCONTRADO.status).json({
+        const acesso = await verificarAcesso(idDoVisualizador(req), Number(usuario.id))
+
+        if (acesso === 'inexistente' || acesso === 'indisponivel') {
+            return responderAcessoNegado(res, acesso)
+        }
+
+        if (acesso === 'restrito') {
+            // Só o necessário pra montar a tela de perfil privado — nada de métricas, bio ou badges.
+            const { id, nome, nome_exibicao, username_social: handle, foto_perfil, visibilidade, data_cadastro } = usuario
+
+            return res.status(200).json({
+                sucesso: true,
+                mensagem: 'Perfil privado.',
+                usuario: { id, nome, nome_exibicao, username_social: handle, foto_perfil, visibilidade, data_cadastro, acesso_restrito: true },
+            })
+        }
+
+        return res.status(200).json({
             sucesso: true,
-            mensagem: config_message.USUARIO_ENCONTRADO.mensagem,
-            usuario: semSenha(usuario)
+            mensagem: 'Usuário encontrado.',
+            usuario: { ...usuario, acesso_restrito: false },
         })
 
     } catch (error) {
         console.error('Erro ao buscar usuário por username:', error)
-        return responderErro(res, config_message.ERRO_BUSCAR_USUARIO || config_message.ERRO_INTERNO)
+        return res.status(500).json({ sucesso: false, mensagem: 'Erro interno do servidor.' })
     }
 }
 
