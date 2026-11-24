@@ -67,6 +67,36 @@ test('JSON completo, URL configurada e token do backend são enviados corretamen
     })
 })
 
+test('contexto financeiro v1 adapta os detalhes de movimentação e os totais de investimentos', async (t) => {
+    const versao = process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION
+    process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION = '1'
+    t.after(() => {
+        if (versao === undefined) delete process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION
+        else process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION = versao
+    })
+    const contexto = { versao: 1, modulos: {
+        investimentos: { dados: { porMoeda: [{ moeda: 'BRL', valorAtual: 200, valorAplicado: 150 }],
+            detalhes: [{ valorAtual: 200, valorAplicado: 150 }] } },
+        movimentacao: { dados: { detalhes: [{ valor: 100, origem: 'conta_bancaria' }] } },
+        cartoes: { dados: { porMoeda: [{ limiteTotal: 500 }] } }
+    } }
+    const original = structuredClone(contexto)
+    let enviado
+    await useFetch(async (_url, options) => {
+        enviado = JSON.parse(options.body).contextoFinanceiro
+        return Response.json({ response: 'Resumo financeiro' })
+    }, async () => {
+        process.env.CLOUDFLARE_WORKER_URL = 'https://ia.example/v1/ia/chat'
+        process.env.CLOUDFLARE_CHAT_TOKEN = 'token-teste'
+        await ia.gerarResposta(pergunta, undefined, undefined, contexto)
+    })
+    assert.deepEqual(enviado.modulos.investimentos.dados.porMoeda, [{ moeda: 'BRL', valorAtual: 200 }])
+    assert.deepEqual(enviado.modulos.investimentos.dados.detalhes, original.modulos.investimentos.dados.detalhes)
+    assert.deepEqual(enviado.modulos.movimentacao.dados.detalhes, [{ valor: 100 }])
+    assert.deepEqual(enviado.modulos.cartoes, original.modulos.cartoes)
+    assert.deepEqual(contexto, original)
+})
+
 test('configuração inválida e token ausente em /chat falham antes do fetch', async () => {
     await useFetch(async () => { throw Error('Não deveria chamar') }, async () => {
         process.env.CLOUDFLARE_WORKER_URL = 'file:///chat'
@@ -88,6 +118,36 @@ test('HTTP de erro não expõe o corpo do provedor nem o token', async () => {
                 assert.doesNotMatch(error.message, /token-super-secreto/)
                 return true
             })
+        })
+    }
+})
+
+test('repete IA_PROVEDOR uma vez quando a primeira tentativa não envia texto', async () => {
+    for (const falha of [
+        () => new Response(null, { status: 502 }),
+        () => sse('data: {"tipo":"erro"}\n\n')
+    ]) {
+        let tentativas = 0
+        await useFetch(async () => ++tentativas === 1 ? falha()
+            : sse('data: {"tipo":"trecho","conteudo":"Resposta"}\n\ndata: {"tipo":"fim"}\n\n'), async () => {
+            const trechos = []
+            assert.equal(await ia.gerarResposta(pergunta, (trecho) => trechos.push(trecho)), 'Resposta')
+            assert.deepEqual(trechos, ['Resposta'])
+            assert.equal(tentativas, 2)
+        })
+    }
+})
+
+test('limita a repetição e preserva a resposta parcial ou o prazo do Worker', async () => {
+    for (const [falha, esperadas] of [
+        [() => new Response(null, { status: 502 }), 2],
+        [() => new Response(null, { status: 502, headers: { 'Retry-After': '60' } }), 1],
+        [() => sse('data: {"tipo":"trecho","conteudo":"Parcial"}\n\ndata: {"tipo":"erro"}\n\n'), 1]
+    ]) {
+        let tentativas = 0
+        await useFetch(async () => { tentativas++; return falha() }, async () => {
+            await assert.rejects(ia.gerarResposta(pergunta), { code: 'IA_PROVEDOR' })
+            assert.equal(tentativas, esperadas)
         })
     }
 })

@@ -1,3 +1,4 @@
+// Busca dados bancários autorizados pela Pluggy.
 /*
  * Integra o FIMAP ao Pluggy para consultar dados de Open Finance.
  * A coleta do chat usa este serviço para verificar o vínculo da conexão
@@ -46,6 +47,8 @@ const obterResultados = (resposta) => {
 }
 
 const obterResultadosDoRecurso = (resposta, campo, id, validarVinculo) => {
+    if (validarVinculo && !Array.isArray(resposta) && !Array.isArray(resposta?.results))
+        throw new Error('PRODUTO_INDISPONIVEL')
     const resultados = obterResultados(resposta)
     if (validarVinculo && resultados.some((resultado) => resultado[campo] !== id))
         throw new Error('VINCULO_PRODUTO_INVALIDO')
@@ -83,7 +86,7 @@ const criarConnectToken = async (clientUserId) => {
 // CONTAS
 // ============================================
 
-const listarContas = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal } = {}) => {
+const listarContas = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal, paraPlanejamento = false } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -123,6 +126,9 @@ const listarContas = async (itemId, { preservarAusencia = false, validarVinculo 
 
         dataFechamentoFatura:
             conta.creditData?.balanceCloseDate ?? null,
+        ...(paraPlanejamento && conta.type === 'BANK' && {
+            saldoLiquido: estimarSaldoLiquido(conta.bankData)
+        })
     }))
 
     return {
@@ -130,6 +136,14 @@ const listarContas = async (itemId, { preservarAusencia = false, validarVinculo 
         total: contas.length,
         contas,
     }
+}
+
+function estimarSaldoLiquido(dados) {
+    if (dados?.hasReservedBalance !== false) return null
+    const saldo = numeroOuNull(dados.closingBalance)
+    const limite = numeroOuNull(dados.overdraftContractedLimit)
+    if (saldo === null || limite === null || limite < 0) return null
+    return Math.max(0, saldo - limite)
 }
 
 const buscarSaldo = async (itemId) => {
@@ -417,7 +431,7 @@ const listarTransacoesCartao = async (itemId, cartaoId, limite = 20) => {
 // INVESTIMENTOS
 // ============================================
 
-const listarInvestimentos = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal } = {}) => {
+const listarInvestimentos = async (itemId, { preservarAusencia = false, validarVinculo = false, sinal, paraPlanejamento = false } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -465,6 +479,7 @@ const listarInvestimentos = async (itemId, { preservarAusencia = false, validarV
             // Datas
             vencimento: paraData(investimento.dueDate),
             dataSaldo: paraData(investimento.date),
+            ...(paraPlanejamento && { valorResgatavel: numeroOuNull(investimento.amountWithdrawal) })
         })
     )
 
@@ -669,7 +684,21 @@ const mapearEmprestimo = (emprestimo, cronograma = construirCronogramaParcelas(e
     }
 }
 
-const listarEmprestimos = async (itemId, { incluirParcelas = false, validarVinculo = false, sinal } = {}) => {
+function dadosContratoPlanejamento(emprestimo) {
+    const taxas = (emprestimo.interestRates ?? []).filter((taxa) => taxa.taxType === 'EFFECTIVE' &&
+        ['MONTHLY', 'YEARLY'].includes(taxa.taxPeriodicity) && typeof taxa.preFixedRate === 'number' &&
+        !taxa.postFixedRate && [null, undefined, 'SEM_INDEXADOR_TAXA'].includes(taxa.referentialRateIndexerType))
+    const anuais = [...new Set(taxas.map((taxa) => Math.round(10000 * (taxa.taxPeriodicity === 'YEARLY'
+        ? taxa.preFixedRate : (1 + taxa.preFixedRate) ** 12 - 1)) / 100))]
+    return {
+        numeroContrato: emprestimo.contractNumber,
+        sistemaCalculo: emprestimo.amortizationScheduled,
+        mensal: emprestimo.installmentPeriodicity === 'MONTHLY',
+        taxaEfetivaAnual: anuais.length === 1 ? anuais[0] : null
+    }
+}
+
+const listarEmprestimos = async (itemId, { incluirParcelas = false, validarVinculo = false, sinal, paraPlanejamento = false } = {}) => {
     if (await verificarSincronizacao(itemId)) {
         return {
             atualizando: true,
@@ -686,7 +715,8 @@ const listarEmprestimos = async (itemId, { incluirParcelas = false, validarVincu
         const quantidadeEsperada = (resumo.parcelasPagas ?? 0) + (resumo.parcelasRestantes ?? 0)
         const pagamentosIdentificados = cronograma.parcelas.filter(({ status }) => status !== 'PENDENTE').length
         const cronogramaParcial = cronograma.parcelas.length < quantidadeEsperada || pagamentosIdentificados < resumo.parcelasPagas
-        return { ...resumo, parcelas: cronograma.parcelas, cronogramaParcial }
+        return { ...resumo, parcelas: cronograma.parcelas, cronogramaParcial,
+            ...(paraPlanejamento && dadosContratoPlanejamento(emprestimo)) }
     })
 
     return {
@@ -766,8 +796,24 @@ const obterDetalheEmprestimo = async (itemId, emprestimoId, opcoes = {}) => {
 // TRANSAÇÕES
 // ============================================
 
+async function lerTransacoesPlanejamento(conta, filtros, sinal) {
+    const dados = []
+    let after
+    for (let pagina = 0; pagina < 8; pagina++) {
+        sinal?.throwIfAborted()
+        const resposta = await pluggy.fetchTransactionsCursor(conta, { ...filtros, after })
+        dados.push(...obterResultadosDoRecurso(resposta, 'accountId', conta, true))
+        if (!resposta.next) return { dados, parcial: false }
+        const cursor = new URL(resposta.next, 'https://api.pluggy.ai').searchParams.get('after')
+        if (!cursor || cursor === after) break
+        after = cursor
+    }
+    return { dados, parcial: true }
+}
+
 const listarTransacoes = async (itemId, opcoes = {}) => {
-    const { resultadoContas: contasCarregadas, dateFrom, dateTo, sinal, permitirParcial = false, validarVinculo = false } = opcoes
+    const { resultadoContas: contasCarregadas, dateFrom, dateTo, sinal, permitirParcial = false,
+        validarVinculo = false, paraPlanejamento = false } = opcoes
     const resultadoContas = contasCarregadas ?? await listarContas(itemId)
 
     if (resultadoContas.atualizando) {
@@ -777,11 +823,18 @@ const listarTransacoes = async (itemId, opcoes = {}) => {
         }
     }
 
-    const contas = resultadoContas.contas ?? []
+    const contasEncontradas = resultadoContas.contas ?? []
+    const contas = paraPlanejamento ? contasEncontradas.filter((conta) => conta.tipo === 'BANK').slice(0, 12) : contasEncontradas
+    let truncado = paraPlanejamento && contas.length < contasEncontradas.filter((conta) => conta.tipo === 'BANK').length
 
     const buscar = async (conta) => {
         sinal?.throwIfAborted()
-        const resposta = await pluggy.fetchAllTransactions(conta.id, { dateFrom, dateTo })
+        let resposta
+        if (paraPlanejamento) {
+            const leitura = await lerTransacoesPlanejamento(conta.id, { dateFrom, dateTo }, sinal)
+            resposta = leitura.dados
+            truncado ||= leitura.parcial
+        } else resposta = await pluggy.fetchAllTransactions(conta.id, { dateFrom, dateTo })
 
         return obterResultadosDoRecurso(resposta, 'accountId', conta.id, validarVinculo).map((transacao) => ({
             id: transacao.id,
@@ -795,6 +848,7 @@ const listarTransacoes = async (itemId, opcoes = {}) => {
             status: transacao.status ?? null,
             moeda: transacao.currencyCode ?? conta.moeda,
             instituicao: conta.instituicao,
+            ...(paraPlanejamento && { operacao: transacao.operationType ?? null })
         }))
     }
 
@@ -824,7 +878,7 @@ const listarTransacoes = async (itemId, opcoes = {}) => {
         atualizando: false,
         total: transacoes.length,
         transacoes,
-        ...(falhas ? { parcial: true } : {}),
+        ...(falhas || truncado ? { parcial: true } : {}),
     }
 }
 

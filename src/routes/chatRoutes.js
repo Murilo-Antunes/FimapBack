@@ -1,3 +1,4 @@
+// Define os endereços do chat que o aplicativo pode chamar.
 /*
  * Define as rotas autenticadas de conversas do FIMAP.
  * Encaminha o envio de perguntas, a consulta do histórico e o acompanhamento
@@ -17,6 +18,7 @@ router.get('/listar-chats{/:id_usuario}', ChatController.ListarChatsPorUsuario);
 router.get('/listar-chat/:id_chat/mensagens{/:id_usuario}', mensagens.listarMensagensChat);
 router.get('/listar-chat/:id_chat{/:id_usuario}', ChatController.ListaPorId);
 router.post('/mensagens', mensagens.enviarMensagemChat);
+router.post('/:id_chat/acoes/:id_acao/confirmar', mensagens.confirmarAcao);
 router.get('/requisicoes/:requisicaoId{/:id_usuario}', mensagens.consultarRequisicao);
 router.post('/requisicoes/:requisicaoId/cancelar{/:id_usuario}', mensagens.cancelarRequisicao);
 

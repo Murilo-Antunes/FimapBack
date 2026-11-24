@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const postController = require("../controller/Comunidade/Post/postController.js");
+const { exigirAcessoAoPerfil } = require('../middlewares/privacidadePerfil.js')
 router.use(require('../middlewares/autorization.js'), require('../middlewares/autorizarUsuario.js'))
 
 // Montada em /v1/comunidade/posts
@@ -17,10 +18,10 @@ router.get("/salvos/:id_usuario", postController.listarPostsSalvos);           /
 
 // Buscar (rotas fixas primeiro, por id por último)
 router.get("/feed", postController.listarFeed);                                       // NOVA
-router.get("/buscar/post/:id_usuario", postController.listarPostsPorUsuario);
+router.get("/buscar/post/text", postController.buscarPostPorTexto)
+router.get("/buscar/post/:id_usuario", exigirAcessoAoPerfil(), postController.listarPostsPorUsuario);
 router.get("/inativos/:id_usuario", postController.listarPostsInativos);
 router.get("/buscar/:id_post", postController.buscarPostPorId);
-router.get("/buscar/post/text", postController.buscarPostPorTexto)
 
 // Atualizar e deletar
 router.patch("/atualizar/:id_post", postController.atualizarPost);

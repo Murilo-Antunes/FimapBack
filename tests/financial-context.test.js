@@ -23,7 +23,7 @@ const ids = { a: 'item-bancario-A-privado', b: 'item-bancario-B-privado', c: 'it
 
 function configurarWorker(t) {
     const configuracao = {
-        JWT_SECRET: 'segredo-jwt-apenas-teste',
+        JWT_SECRET: 'segredo-jwt-apenas-teste-com-32-bytes-de-teste',
         CLOUDFLARE_WORKER_URL: urlWorker,
         CLOUDFLARE_CHAT_TOKEN: 'bearer-worker-apenas-teste',
         CLOUDFLARE_FINANCIAL_CONTEXT_VERSION: '1'

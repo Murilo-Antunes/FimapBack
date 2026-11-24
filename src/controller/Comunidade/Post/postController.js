@@ -1,3 +1,4 @@
+const { verificarAcesso, responderAcessoNegado } = require('../../../middlewares/privacidadePerfil.js')
 const config_message = require('../../modulo/configMensagens.js')
 const postDAO = require('../../../../model/DAO/Comunidade/Post/postDAO.js')
 const { UploadArquivo, UploadUrl, ExcluirVarias } = require('../../../services/cloudinary.js')
@@ -399,6 +400,9 @@ const buscarPostPorId = async (req, res) => {
             return responderErro(res, config_message.POST_NAO_ENCONTRADO)
         }
 
+        const acesso = await verificarAcesso(idVisualizador, Number(post.autor_id))
+        if (acesso !== 'liberado') return responderAcessoNegado(res, acesso)
+
         const [comSalvo] = await marcarSalvos([post], idVisualizador)
 
         return responderSucesso(res, config_message.POST_ENCONTRADO, {
@@ -775,10 +779,11 @@ const buscarPostPorTexto = async (req, res) => {
             })
         }
 
-        const posts = await postModel.BuscarPostsFullText({
+        const posts = await postDAO.BuscarPostsFullText({
             busca: busca.trim(),
             idVisualizador: id_usuario,
-            offset: Number(offset) || 0
+            offset: Number.isSafeInteger(Number(offset)) && Number(offset) >= 0 ? Number(offset) : 0,
+            limite: lerPaginacao(req).limite
         })
 
         return res.status(200).json({
@@ -787,7 +792,7 @@ const buscarPostPorTexto = async (req, res) => {
                 ? 'Posts encontrados com sucesso.'
                 : 'Nenhum post encontrado.',
             quantidade: posts.length,
-            posts
+            posts: (await marcarSalvos(posts, id_usuario)).map(formatarPost)
         })
 
     } catch (error) {

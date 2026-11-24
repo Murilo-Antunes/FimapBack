@@ -71,7 +71,8 @@ const exigirAcessoAoPerfil = (nomeParam = 'id_usuario') => [
 const exigirProprioUsuario = (campo = 'id_usuario') => [
     autenticar,
     (req, res, next) => {
-        const alvo = Number(req.params?.[campo] ?? req.body?.[campo] ?? req.query?.[campo])
+        const dados = req.method === 'GET' ? req.query : req.body
+        const alvo = Number(req.params?.[campo] ?? dados?.[campo])
         if (!idValido(alvo)) return negar(res, 400, 'Id de usuário inválido.')
 
         const visualizador = idDoVisualizador(req)

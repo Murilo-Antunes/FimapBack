@@ -1,4 +1,4 @@
-const knexConex = require('../../Database_config_knex/knexConex.js')
+const knexConex = require('../../Database_config_knex/connection.js')
 
 const VALIDADE_DIAS = 30
 const VALIDADE_MS = VALIDADE_DIAS * 24 * 60 * 60 * 1000

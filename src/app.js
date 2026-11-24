@@ -15,6 +15,7 @@ const configuracoesRoutes = require('./routes/configuracoesRoutes.js')
 const badgeRoutes = require('./routes/badgeRoutes.js')
 const chatRoutes = require('./routes/chatRoutes.js')
 const recommendationRoutes = require('./routes/financialRecommendationsRoutes.js')
+const socialRoutes = require('./routes/socialRoutes.js')
 const postRoutes = require('./routes/postRoutes.js')
 const comentarRoutes = require('./routes/comentarioRoutes.js')
 const denunciarRoutes = require('./routes/denunciaRoutes.js')
@@ -58,13 +59,13 @@ app.post('/v1/ia/chat-publico', limitarChat, chatPublicoController.conversarPubl
 app.use('/v1/ia/chats', mensagemChatRoutes)
 app.use('/v1/ia/chat', chatRoutes)
 app.use('/v1/ia/recomendacoes', recommendationRoutes)
-// Keep public user auth routes ahead of the protected Open Finance router.
 app.use('/v1/openfinance/usuario', usuarioRoutes)
-app.use('/v1/openfinance', openFinanceRoutes)
 app.use('/v1/openfinance/metas', metasRoutes)
+app.use('/v1/openfinance', openFinanceRoutes)
 app.use('/v1/configuracoes', configuracoesRoutes)
 app.use('/v1/simulacoes', simulacoesRoutes)
 app.use('/v1/notificacoes', notificacaoRoutes)
+app.use('/v1/comunidade/social', socialRoutes)
 app.use('/v1/comunidade/posts', postRoutes)
 app.use('/v1/comunidade/posts/comentario', comentarRoutes)
 app.use('/v1/comunidade/curtida', curtirRoutes)
@@ -77,12 +78,17 @@ app.use('/v1/comunidade/denuncias', denunciaUsuarioRoutes)
 /* ----------------------------- Servidor ----------------------------- */
 
 if (require.main === module) {
-    const servidor = app.listen(PORT, () => {
+    const servidor = app.listen(PORT)
+    servidor.once('listening', () => {
         console.log(`Servidor rodando na porta ${PORT}`)
         require('./services/financialRecommendationsService.js').start()
     })
     servidor.on('error', (erro) => {
-        console.error('Erro ao subir o servidor:', erro)
+        if (erro.code === 'EADDRINUSE') {
+            console.error(`A porta ${PORT} já está em uso. Encerre a outra instância ou defina uma porta diferente em PORT.`)
+        } else {
+            console.error('Erro ao subir o servidor:', erro)
+        }
         process.exit(1)
     })
 }
