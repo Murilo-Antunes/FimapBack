@@ -143,24 +143,28 @@ const lerConteudo = (valor) => {
 // Linha crua do banco -> objeto que a API devolve ao front.
 // Number() no status evita erro quando o driver devolve string ou BigInt.
 // "salvo" vem da query da aba Salvos (1) ou do marcarSalvos; sem isso, false.
-const formatarPost = (p) => ({
-    id: p.id,
-    data_criacao: p.data_criacao,
-    data_atualizacao: p.data_atualizacao,
-    status: Number(p.status) === STATUS_ATIVO ? 'ativo' : 'inativo',
-    id_usuario: p.id_usuario,
-    conteudo: lerConteudo(p.conteudo),
-    autor: {
-        id: p.autor_id ?? p.id_usuario,
-        nome_exibicao: p.autor_nome_exibicao ?? null,
-        username_social: p.autor_username_social ?? null,
-        foto_perfil: p.autor_foto_perfil ?? null
-    },
-    total_curtidas: Number(p.total_curtidas ?? 0),
-    total_comentarios: Number(p.total_comentarios ?? 0),
-    curtiu: Boolean(Number(p.curtiu ?? 0)),
-    salvo: Boolean(Number(p.salvo ?? 0))
-})
+const formatarPost = (p) => {
+    const conteudo = lerConteudo(p.conteudo)
+
+    return {
+        id: p.id,
+        data_criacao: p.data_criacao,
+        data_atualizacao: p.data_atualizacao,
+        status: Number(p.status) === STATUS_ATIVO ? 'ativo' : 'inativo',
+        id_usuario: p.id_usuario,
+        conteudo,
+        autor: {
+            id: p.autor_id ?? p.id_usuario,
+            nome_exibicao: p.autor_nome_exibicao ?? null,
+            username_social: p.autor_username_social ?? null,
+            foto_perfil: p.autor_foto_perfil ?? null
+        },
+        total_curtidas: Number(p.total_curtidas ?? 0),
+        total_comentarios: Number(p.total_comentarios ?? 0),
+        curtiu: Boolean(Number(p.curtiu ?? 0)),
+        salvo: Boolean(Number(p.salvo ?? 0))
+    }
+}
 
 // Perfil social completo = nome_exibicao E username_social preenchidos
 const perfilSocialCompleto = (u) =>

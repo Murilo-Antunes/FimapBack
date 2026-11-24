@@ -5,13 +5,14 @@ const postController = require("../controller/Comunidade/Post/postController.js"
 const autenticar = require('../middlewares/autorization.js')
 const autorizarUsuario = require('../middlewares/autorizarUsuario.js')
 const { exigirAcessoAoPerfil } = require('../middlewares/privacidadePerfil.js')
+const uploadPost = require('../middlewares/uploadPost.js')
 
 router.use(autenticar)
 
 // Montada em /v1/comunidade/posts
 
 // Criar
-router.post("/criar", postController.criarPost);
+router.post("/criar", uploadPost, postController.criarPost);
 
 // Posts salvos — ANTES das rotas por id/usuário pra não colidir com elas.
 router.post("/salvar", postController.salvarPost);
