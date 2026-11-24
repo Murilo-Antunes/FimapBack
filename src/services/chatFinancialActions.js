@@ -117,16 +117,18 @@ function interpretarResposta(resposta) {
     return resposta
 }
 
-async function prepararAcao(r, { consultarRascunho, consultarCategorias }, signal) {
+async function prepararAcao(r, { consultarRascunho, consultarCategorias }, signal, planejamentoHabilitado = false) {
     const pergunta = r.pergunta
     const mensagem = normalizarTexto(pergunta).replace(/[.!?]+$/, '').trim()
     const confirmacao = mensagem.match(/^(?:confirmar acao ([0-9a-f]{8})|confirmar|confirmo|confirmo que quero salvar|(?:sim,? )?pode salvar|confirmo o salvamento)$/)
+    const rascunhoV1 = planejamentoHabilitado && !confirmacao?.[1] ? await consultarRascunho(r) : null
+    if (planejamentoHabilitado && !confirmacao?.[1] && !rascunhoV1) return null
     if (confirmacao) return (trx, pedido, now) => confirmar(trx, pedido, now, confirmacao[1])
     if (/^(?:cancelar (?:rascunho|acao)|cancele o rascunho|cancela(?: o rascunho)?|cancelar|descarte o rascunho|desisti|nao quero mais)$/.test(mensagem)) {
         return async (trx, pedido) => await pendente(trx, pedido).del()
             ? 'Rascunho cancelado.' : 'Este chat está sem rascunho ativo.'
     }
-    const registro = await consultarRascunho(r)
+    const registro = rascunhoV1 ?? await consultarRascunho(r)
     const atual = registro?.proposta
     if (!atual && (/^(?:qual|quais|quanto|onde)\b/.test(mensagem) || !candidato(mensagem))) return null
     let resposta

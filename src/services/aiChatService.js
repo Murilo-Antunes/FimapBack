@@ -1,3 +1,4 @@
+// Envia as mensagens para a IA e recebe a resposta em partes.
 /*
  * Envia as mensagens do chat ao Worker da Cloudflare e recebe a resposta.
  * Na rota privada, inclui o contexto financeiro quando a versão configurada
@@ -25,7 +26,11 @@ const obterConfiguracao = () => {
     const versaoContextoFinanceiro = url.protocol === 'https:' && url.pathname === '/v1/ia/chat' &&
         !url.search && !url.hash && !!token && process.env.CLOUDFLARE_FINANCIAL_CONTEXT_VERSION === String(VERSAO_CONTEXTO_FINANCEIRO)
         ? VERSAO_CONTEXTO_FINANCEIRO : null
-    return { url: url.toString(), token, versaoContextoFinanceiro }
+    const transportePrivado = url.protocol === 'https:' ||
+        (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    const planejamentoHabilitado = transportePrivado && !!token && !url.username && !url.password && !url.search && !url.hash &&
+        url.pathname.replace(/\/$/, '') === '/v1/ia/chat' && process.env.CLOUDFLARE_PLANNING_VERSION === '2'
+    return { url: url.toString(), token, versaoContextoFinanceiro, planejamentoHabilitado }
 }
 const obterConfiguracaoPrivada = () => {
     const config = obterConfiguracao()
@@ -42,16 +47,67 @@ const extrairTexto = (dados) => {
     return typeof texto === 'string' ? texto : ''
 }
 
+// O Worker v1 aceita valorAplicado nos detalhes de investimentos e não aceita origem nas transações.
+function adaptarContextoFinanceiro(contexto) {
+    const modulos = { ...contexto.modulos }
+    const investimentos = modulos.investimentos
+    if (Array.isArray(investimentos?.dados?.porMoeda)) {
+        modulos.investimentos = {
+            ...investimentos,
+            dados: {
+                ...investimentos.dados,
+                porMoeda: investimentos.dados.porMoeda.map(({ valorAplicado, ...resumo }) => resumo)
+            }
+        }
+    }
+    const movimentacao = modulos.movimentacao
+    if (Array.isArray(movimentacao?.dados?.detalhes)) {
+        modulos.movimentacao = {
+            ...movimentacao,
+            dados: {
+                ...movimentacao.dados,
+                detalhes: movimentacao.dados.detalhes.map(({ origem, ...transacao }) => transacao)
+            }
+        }
+    }
+    return { ...contexto, modulos }
+}
+
 // É o ponto central usado tanto pelo chat público quanto pelo chat com histórico.
 const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal, contextoFinanceiro) => {
     const mensagens = validarMensagens(entrada)
     const { url, token, versaoContextoFinanceiro } = obterConfiguracao()
     const payload = { messages: mensagens }
-    if (versaoContextoFinanceiro && contextoFinanceiro?.versao === versaoContextoFinanceiro &&
-        Buffer.byteLength(JSON.stringify(contextoFinanceiro), 'utf8') <= LIMITE_CONTEXTO_FINANCEIRO_BYTES) {
-        payload.contextoFinanceiro = contextoFinanceiro
+    if (versaoContextoFinanceiro && contextoFinanceiro?.versao === versaoContextoFinanceiro) {
+        const contexto = adaptarContextoFinanceiro(contextoFinanceiro)
+        if (Buffer.byteLength(JSON.stringify(contexto), 'utf8') <= LIMITE_CONTEXTO_FINANCEIRO_BYTES) {
+            payload.contextoFinanceiro = contexto
+        }
     }
     const sinal = signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_IA_MS)]) : AbortSignal.timeout(TIMEOUT_IA_MS)
+    let enviouTrecho = false
+    const enviarTrecho = (trecho) => {
+        enviouTrecho = true
+        return aoReceberTrecho(trecho)
+    }
+    try {
+        return await gerarTentativa(url, token, payload, enviarTrecho, sinal, signal)
+    } catch (erro) {
+        if (enviouTrecho || sinal.aborted || !erro.repetivel) throw erro
+        return gerarTentativa(url, token, payload, enviarTrecho, sinal, signal)
+    }
+}
+
+function falhaWorker(status, codigo, retryAfter, formato) {
+    const erro = erroWorker(status, codigo, retryAfter)
+    if (erro.code === 'IA_PROVEDOR') {
+        console.error('Falha da IA no Worker:', { status, formato,
+            codigo: typeof codigo === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(codigo) ? codigo : null })
+    }
+    return erro
+}
+
+const gerarTentativa = async (url, token, payload, aoReceberTrecho, sinal, signal) => {
     let reader
     let cancelarLeitura
     let respostaCompleta = ''
@@ -74,7 +130,7 @@ const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal, contex
         try { dados = JSON.parse(data) }
         catch { throw criarErro(502, 'A IA retornou um evento inválido.', 'IA_RESPOSTA_INVALIDA') }
         if (dados?.tipo === 'erro' || dados?.error)
-            throw erroWorker(502, dados.codigo, dados.retry_after)
+            throw falhaWorker(502, dados.codigo ?? dados.error?.code, dados.retry_after, 'SSE')
         await adicionar(extrairTexto(dados))
         if (dados?.tipo === 'fim' || dados?.choices?.some((item) => item.finish_reason != null)) concluido = true
     }
@@ -101,17 +157,20 @@ const gerarResposta = async (entrada, aoReceberTrecho = () => {}, signal, contex
                         if (parte.done) break
                         texto += decoder.decode(parte.value, { stream: true })
                     }
-                    if (texto.length <= 16384) codigo = JSON.parse(texto).codigo
+                    if (texto.length <= 16384) {
+                        const dados = JSON.parse(texto)
+                        codigo = dados?.codigo ?? dados?.code ?? dados?.error?.code
+                    }
                 } catch {} finally { await leitor.cancel().catch(() => {}); leitor.releaseLock() }
             } else await response.body?.cancel()
-            throw erroWorker(response.status, codigo, response.headers.get('Retry-After'))
+            throw falhaWorker(response.status, codigo, response.headers.get('Retry-After'), 'HTTP')
         }
         if (response.headers.get('Content-Type')?.includes('application/json')) {
             let dados
             try { dados = await response.json() }
             catch { throw criarErro(502, 'A IA retornou um JSON inválido.', 'IA_RESPOSTA_INVALIDA') }
             if (dados?.error || dados?.tipo === 'erro')
-                throw erroWorker(502, dados.codigo, dados.retry_after)
+                throw falhaWorker(502, dados.codigo ?? dados.error?.code, dados.retry_after, 'JSON')
             await adicionar(extrairTexto(dados))
             concluido = true
         } else {

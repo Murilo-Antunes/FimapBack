@@ -21,6 +21,10 @@ const CreateCodigoOTP = async (dados) => {
     try {
         // Transação: ou desativa os antigos E cria o novo, ou não faz nada
         return await knexConex.transaction(async (trx) => {
+            // Serializa a emissão de códigos para o mesmo usuário.
+            const usuario = await trx('tbl_usuario').where({ id: dados.id_usuario }).forUpdate().first('id')
+            if (!usuario) return false
+
             await trx.raw(sqlDesativar, [dados.id_usuario])
 
             const result = await trx.raw(sqlInserir, [

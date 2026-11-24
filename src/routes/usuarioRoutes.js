@@ -17,7 +17,9 @@ router.post("/consultar/otp/:id_usuario", limitarAutenticacao, usuarioController
 
 // Consultas usadas pelo perfil social público.
 router.get("/social/username-disponivel/:username_social", usuarioController.verificarUsernameSocial)
-router.get("/usuario/social/:username_social", usuarioController.buscarUsuarioPorUsernameSocial)
+router.get("/usuario/social/:username_social",
+    (req, res, next) => req.headers.authorization ? autenticar(req, res, next) : next(),
+    usuarioController.buscarUsuarioPorUsernameSocial)
 
 router.use(autenticar, autorizarUsuario)
 

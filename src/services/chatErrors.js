@@ -19,7 +19,10 @@ const erroWorker = (status, codigo, retry) => {
         : status === 429 ? [429, 'Limite temporário da IA atingido.', 'IA_LIMITE']
         : status === 503 ? [503, 'O serviço de IA não está disponível ou configurado.', 'IA_SERVICO_INDISPONIVEL']
         : [502, 'A IA não conseguiu concluir a resposta.', 'IA_PROVEDOR']
-    return Object.assign(criarErro(http, mensagem, code), { retryAfter: retrySeguro(retry) })
+    const retryAfter = retrySeguro(retry)
+    // A falha genérica 5xx pode ser transitória. Respeita o prazo pedido pelo Worker.
+    const repetivel = code === 'IA_PROVEDOR' && status >= 500 && !retryAfter
+    return Object.assign(criarErro(http, mensagem, code), { retryAfter, repetivel })
 }
 const publico = (error) => ({ sucesso: false, codigo: error.statusCode ? error.code || 'CHAT_ERRO' : 'CHAT_BANCO',
     mensagem: error.statusCode ? error.message : 'Não foi possível concluir a solicitação.' })

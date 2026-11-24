@@ -9,6 +9,8 @@ const { enviarOTP } = require('../../config/email.js')
 const { gerarToken } = require('../../services/jwtService.js')
 const middlewarePrivacidade= require('../../middlewares/privacidadePerfil.js')
 
+const { verificarAcesso, idDoVisualizador, responderAcessoNegado } = require('../../middlewares/privacidadePerfil.js')
+
 const OTP_VALIDADE_MS = 5 * 60 * 1000
 const SENHA_MIN_CARACTERES = 8
 
@@ -594,7 +596,7 @@ const buscarUsuarioPorUsername = async (req, res) => {
 }
 
 const buscarUsuarioPorUsernameSocial = async (req, res) => {
-        try {
+    try {
         const username_social = typeof req.params?.username_social === 'string' ? req.params.username_social.trim() : ''
 
         if (!username_social) {
@@ -627,7 +629,7 @@ const buscarUsuarioPorUsernameSocial = async (req, res) => {
         return res.status(200).json({
             sucesso: true,
             mensagem: 'Usuário encontrado.',
-            usuario: { ...usuario, acesso_restrito: false },
+            usuario: { ...semSenha(usuario), acesso_restrito: false },
         })
 
     } catch (error) {

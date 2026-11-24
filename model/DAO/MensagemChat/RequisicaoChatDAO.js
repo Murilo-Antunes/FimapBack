@@ -1,5 +1,7 @@
+// Controla os pedidos do chat e grava as respostas.
 // Reservas curtas no MySQL; nenhuma transação fica aberta durante a inferência.
 const db = require('../../Database_config_knex/connection.js')
+const acoes = require('./AcaoChatDAO.js')
 const { criarErro } = require('../../../src/services/chatValidation.js')
 const { ler } = require('../../../src/services/chatFinancialActions.js')
 const { categorias } = require('../../../src/services/chatActionCatalog.js')
@@ -60,6 +62,7 @@ const resultado = async (requisicao) => {
     const usuario = linhas.find((m) => Number(m.id) === Number(requisicao.id_mensagem_usuario))
     const assistente = linhas.find((m) => Number(m.id) === Number(requisicao.id_mensagem_assistente))
     if (!usuario || !assistente) throw criarErro(500, 'Não foi possível recuperar o resultado salvo.', 'CHAT_BANCO')
+    await acoes.anexar(requisicao.id_chat, [assistente], db)
     return { mensagem_usuario: usuario, mensagem_assistente: assistente }
 }
 
@@ -82,7 +85,7 @@ const contexto = async (requisicao) => {
     return pares.flat()
 }
 
-const concluir = (r, resposta) => transacao(r.id_usuario, r.id_chat, async (trx, now) => {
+const concluir = (r, resposta, propostas = []) => transacao(r.id_usuario, r.id_chat, async (trx, now) => {
     const atual = await trx(TABELA).where('id', r.id).first()
     if (atual.estado !== 'gerando' || atual.dono_lease !== r.dono_lease || Number(atual.lease_ate_ms) <= now)
         throw criarErro(409, 'A solicitação não está mais ativa.', atual.codigo_erro || 'REQUISICAO_INATIVA')
@@ -90,6 +93,7 @@ const concluir = (r, resposta) => transacao(r.id_usuario, r.id_chat, async (trx,
     const data = new Date(now)
     const [idUsuario] = await trx('tbl_mensagem').insert({ id_chat: r.id_chat, conteudo: r.pergunta, papel: 1, data_envio: data })
     const [idAssistente] = await trx('tbl_mensagem').insert({ id_chat: r.id_chat, conteudo: texto, papel: 2, data_envio: data })
+    await acoes.registrar(trx, r.id_chat, idAssistente, propostas)
     await trx(TABELA).where('id', r.id).update({ estado: 'concluida', chat_ativo: null,
         id_mensagem_usuario: idUsuario, id_mensagem_assistente: idAssistente })
     return { ...atual, estado: 'concluida', id_mensagem_usuario: idUsuario, id_mensagem_assistente: idAssistente }
@@ -105,4 +109,5 @@ const finalizar = (r, estado, codigo, status = 409, retryAfter = null) => transa
 const consultarRascunho = (r) => ler(db, r, Number(r.criada_ms))
 const consultarCategorias = (usuario) => categorias(db, usuario).orderBy('nome').limit(20).pluck('nome')
 
-module.exports = { reservar, consultar, resultado, contexto, concluir, finalizar, consultarRascunho, consultarCategorias, LEASE_MS }
+module.exports = { reservar, consultar, resultado, contexto, concluir, finalizar, consultarRascunho, consultarCategorias, LEASE_MS,
+    rascunhos: (r) => acoes.rascunhos(r.id_chat, r.id_usuario, db) }
