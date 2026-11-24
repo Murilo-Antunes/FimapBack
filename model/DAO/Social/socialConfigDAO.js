@@ -1,4 +1,7 @@
-const knexConex = require('../../Database_config_knex/KnexFile.js')
+const knex = require('knex')
+
+const knexConfig = require('../../Database_config_knex/KnexFile.js')
+const knexConex = knex(knexConfig.development)
 
 // visibilidade mora em tbl_usuario; o resto em tbl_configuracoes.
 // notif_topicos_ia é a coluna já existente "topicos".

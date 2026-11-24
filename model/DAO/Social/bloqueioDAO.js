@@ -1,4 +1,7 @@
-const knexConex = require('../../Database_config_knex/KnexFile.js')
+const knex = require('knex')
+
+const knexConfig = require('../../Database_config_knex/KnexFile.js')
+const knexConex = knex(knexConfig.development)
 
 // Bloquear também desfaz tudo que ligava os dois: follows nos dois sentidos
 // e solicitações de acesso (inclusive as aceitas) nos dois sentidos.
