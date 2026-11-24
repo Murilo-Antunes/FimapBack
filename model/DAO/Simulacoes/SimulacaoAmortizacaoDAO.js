@@ -1,3 +1,4 @@
+// Busca e grava as simulações de pagamento antecipado de dívidas.
 const knex = require('knex')(require('../../Database_config_knex/KnexFile.js').development)
 const tabela = 'tbl_simulacao_amortizacao'
 const colunas = [
@@ -39,12 +40,17 @@ const consultarSimulacaoAmortizacao = async (simulacaoId, usuarioId, executor = 
         await executor(tabela).select(colunas).where({ id: simulacaoId, id_usuario: usuarioId }).first()
     )
 
-const criarSimulacaoAmortizacao = async (usuarioId, dados, executor = knex) => {
-    const [id] = await executor(tabela).insert({
+const inserirSimulacao = async (usuarioId, dados, conexao = knex) => {
+    const [id] = await conexao(tabela).insert({
         ...dados,
         id_usuario: usuarioId,
-        data_criacao: executor.fn.now()
+        data_criacao: conexao.fn.now()
     })
+    return id
+}
+
+const criarSimulacaoAmortizacao = async (usuarioId, dados, executor = knex) => {
+    const id = await inserirSimulacao(usuarioId, dados, executor)
     return consultarSimulacaoAmortizacao(id, usuarioId, executor)
 }
 
@@ -63,6 +69,7 @@ module.exports = {
     listarSimulacoesAmortizacao,
     consultarSimulacaoAmortizacao,
     criarSimulacaoAmortizacao,
+    inserirSimulacao,
     atualizarSimulacaoAmortizacao,
     removerSimulacaoAmortizacao
 }

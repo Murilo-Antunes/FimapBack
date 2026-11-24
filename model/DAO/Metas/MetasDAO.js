@@ -1,3 +1,4 @@
+// Busca e grava as metas e suas categorias.
 /*
  * Lê e grava as metas financeiras no banco do FIMAP.
  * O chat usa a listagem por usuário para montar o resumo das metas do titular.
@@ -17,7 +18,7 @@ const normalizarDataAlvo = (valor) => {
 }
 
 // Criar meta
-const CreateMeta = async (meta, { executor = knexConex, propagarErro = false } = {}) => {
+const inserirMeta = async (meta, conexao = knexConex) => {
     const sql = `
         INSERT INTO tbl_meta_financeira
         (
@@ -36,23 +37,26 @@ const CreateMeta = async (meta, { executor = knexConex, propagarErro = false } =
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
 
+    const [result] = await conexao.raw(sql, [
+        meta.nome,
+        meta.descricao,
+        meta.valor_inicio,
+        meta.valor_desejado,
+        meta.valor_total,
+        meta.aporte_mensal,
+        meta.dataCivil ?? normalizarDataAlvo(meta.data_alvo),
+        meta.status,
+        meta.id_categoria,
+        meta.id_conta_vinculada,
+        meta.id_usuario
+    ])
+    return result.insertId
+}
+
+const CreateMeta = async (meta, { executor = knexConex, propagarErro = false } = {}) => {
     try {
-        const [result] = await executor.raw(sql, [
-            meta.nome,
-            meta.descricao,
-            meta.valor_inicio,
-            meta.valor_desejado,
-            meta.valor_total,
-            meta.aporte_mensal,
-            normalizarDataAlvo(meta.data_alvo),
-            meta.status,
-            meta.id_categoria,
-            meta.id_conta_vinculada,
-            meta.id_usuario
-        ])
-
-        return result.insertId
-
+        // A rota existente continua aceitando o formato ISO usado pelo cliente.
+        return await inserirMeta(meta, executor)
     } catch (error) {
         if (propagarErro) throw error
         console.error('Erro ao criar meta:', error)
@@ -164,17 +168,14 @@ const GetAllMetasUsuario = async (id_usuario, { propagarErro = false } = {}) => 
 
 // Buscar todas as categorias disponíveis para o usuário
 // (padrão do sistema, com id_usuario NULL, + personalizadas dele)
+const listarCategorias = (usuario, conexao = knexConex) => conexao('tbl_categoria_meta')
+    .select('id', 'nome', 'id_usuario')
+    .where(function () { this.where('id_usuario', usuario).orWhereNull('id_usuario') })
+    .orderBy('nome', 'asc').orderBy('id', 'asc')
+
 const GetAllCategoriasMeta = async (id_usuario) => {
     try {
-        return await knexConex('tbl_categoria_meta')
-            .select(
-                'id',
-                'nome',
-                'id_usuario'
-            )
-            .where('id_usuario', id_usuario)
-            .orWhereNull('id_usuario')
-            .orderBy('nome', 'asc')
+        return await listarCategorias(id_usuario)
 
     } catch (error) {
         console.error('Erro ao listar categorias do usuário:', error)
@@ -235,6 +236,8 @@ const GetMetaById = async (id_usuario, id_meta) => {
 
 module.exports = {
     CreateMeta,
+    inserirMeta,
+    listarCategorias,
     UpdateMeta,
     DeleteMeta,
     GetAllMetasUsuario,
