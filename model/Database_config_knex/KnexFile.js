@@ -1,29 +1,30 @@
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') })
+const path = require('path')
 
-module.exports = {
-    development: {
-      // ALTERAÇÃO: Define o cliente como 'mysql2'
-      client: 'mysql2',
-      connection: {
-        host: 'localhost', 
-        user: 'root', 
-        password: '12345678' /*'12345678'*/, 
-        database: 'db_fimap_2026',
-        port: 3306, // Porta padrão do MySQL
-       
-        // Opcional: Define charset (recomendado para UTF8)
-        charset: 'utf8mb4'
-      },
-     
-      // Configurações de Migração
-      migrations: {
-        tableName: 'knex_migrations', // Nome da tabela de migrações
-        directory: require('path').resolve(__dirname, '../../db/migrations')
-      },
-      seeds: {
-        directory: './db/seeds'
-      }
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') })
+
+const config = {
+    client: 'mysql2',
+    connection: {
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD ?? '',
+        database: process.env.DB_NAME || 'db_fimap_2026',
+        port: Number(process.env.DB_PORT || 3306),
+        charset: 'utf8mb4',
+        ...(process.env.DB_SSL === 'true' && {
+            ssl: {
+                rejectUnauthorized: true,
+                ...(process.env.DB_SSL_CA && { ca: process.env.DB_SSL_CA })
+            }
+        })
     },
-   
-    // Você pode adicionar configurações para produção, testes, etc.
-  };
+    migrations: {
+        tableName: 'knex_migrations',
+        directory: path.resolve(__dirname, '../../db/migrations')
+    },
+    seeds: {
+        directory: './db/seeds'
+    }
+}
+
+module.exports = { development: config, production: config }
