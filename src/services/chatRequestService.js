@@ -52,7 +52,7 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
     const controle = new AbortController()
     const prazo = AbortSignal.timeout(120000)
     const combinado = AbortSignal.any([controle.signal, prazo, ...(signal ? [signal] : [])])
-    let timer, encerrado = false
+    let timer, encerrado = false, etapa = 'preparar-acao'
     // Consulta durável permite cancelar a geração que está em outra instância.
     const verificar = async () => {
         try {
@@ -79,13 +79,16 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
             await trecho(salvo.mensagem_assistente.conteudo)
             return salvo
         }
+        etapa = 'carregar-contexto'
         const contexto = validarMensagens([...(await dao.contexto(r)), { role: 'user', content: pergunta }])
+        etapa = 'planejar'
         const planejamento = config?.planejamentoHabilitado ? await planejar({
             usuario, mensagens: contexto, carregarRascunhos: () => dao.rascunhos(r),
             buscarFinanceiro: financeiro.construirContextoPlanejamento, config, sinal: combinado
         }) : null
         let contextoFinanceiro
         if (!planejamento && config?.versaoContextoFinanceiro) {
+            etapa = 'contexto-financeiro'
             try {
                 contextoFinanceiro = await financeiro.construirContextoFinanceiro(usuario, contexto, { sinal: combinado })
             } catch {
@@ -94,10 +97,13 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
             }
         }
         combinado.throwIfAborted()
+        etapa = 'consultar-requisicao'
         const atual = await dao.consultar(usuario, uuid)
         if (atual.estado !== 'gerando') throw erroEstado(atual)
+        etapa = planejamento ? 'salvar-resposta-planejada' : 'gerar-resposta-ia'
         const texto = planejamento?.texto ?? await ia.gerarResposta(contexto, trecho, combinado, contextoFinanceiro)
         combinado.throwIfAborted()
+        etapa = 'salvar-resposta'
         const concluida = await dao.concluir(r, texto, planejamento?.propostas)
         const salvo = await resultado(concluida)
         if (planejamento) await trecho(texto)
@@ -106,6 +112,7 @@ const gerar = async (usuario, chat, uuid, pergunta, trecho, signal) => {
         const error = prazo.aborted ? criarErro(504, 'A IA demorou demais para responder.', 'IA_TIMEOUT')
             : controle.signal.aborted ? controle.signal.reason
             : signal?.aborted ? criarErro(409, 'Solicitação cancelada.', 'REQUISICAO_CANCELADA') : causa
+        error.chatStage = etapa
         const estado = error.code === 'REQUISICAO_CANCELADA' ? 'cancelada' : 'falhou'
         try { await dao.finalizar(r, estado, error.statusCode ? error.code : 'CHAT_BANCO', error.statusCode || 500, error.retryAfter || null) }
         catch { console.error('Falha no chat:', 'CHAT_BANCO_ESTADO') }

@@ -1,8 +1,17 @@
 const { criarErro } = require('./chatValidation.js')
 const { publico, retrySeguro } = require('./chatErrors.js')
 
+// Mantém no log a etapa e a classe da falha sem registrar mensagem, prompt,
+// consulta SQL ou qualquer dado financeiro do usuário.
+const registrarFalha = (prefixo, error) => {
+    const codigoInterno = typeof error.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(error.code)
+        ? error.code : undefined
+    console.error(prefixo, { codigo: publico(error).codigo, etapa: error.chatStage || 'desconhecida',
+        tipo: error.name || 'Error', ...(codigoInterno ? { codigoInterno } : {}) })
+}
+
 const responderErro = (res, error) => {
-    console.error('Falha no chat:', publico(error).codigo)
+    registrarFalha('Falha no chat:', error)
     const retry = retrySeguro(error.retryAfter)
     if (retry) res.set({ 'Retry-After': retry })
     return res.status(error.statusCode || 500).json(publico(error))
@@ -46,7 +55,7 @@ const transmitir = async (res, executar) => {
         if (!controlador.signal.aborted && !res.destroyed && !res.writableEnded) {
             if (!iniciado) responderErro(res, error)
             else {
-                console.error('Falha no streaming do chat:', publico(error).codigo)
+                registrarFalha('Falha no streaming do chat:', error)
                 try { await enviar({ tipo: 'erro', ...publico(error),
                     ...(retrySeguro(error.retryAfter) ? { retry_after: error.retryAfter } : {}) }) }
                 catch { /* Cliente lento ou desconectado; o serviço já finalizou a solicitação. */ }
