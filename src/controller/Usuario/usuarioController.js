@@ -7,6 +7,7 @@ const usuarioSocialDAO = require('../../../model/DAO/Usuario/usuarioSocialDAO.js
 const { UploadArquivo, ExcluirVarias } = require('../../services/cloudinary.js')
 const { enviarOTP } = require('../../config/email.js')
 const { gerarToken } = require('../../services/jwtService.js')
+const middlewarePrivacidade= require('../../middlewares/privacidadePerfil.js')
 
 const OTP_VALIDADE_MS = 5 * 60 * 1000
 const SENHA_MIN_CARACTERES = 8
@@ -24,6 +25,8 @@ const CAMPOS_EDITAVEIS = [
     'localizacao_estado',
     'visibilidade'
 ]
+
+const idDoVisualizador = (req) => Number(req.usuario?.id) || 0
 
 // username_social: 3 a 30 caracteres [a-z0-9._], sem . ou _ no início/fim nem em sequência
 const REGEX_USERNAME_SOCIAL = /^(?![._])(?!.*[._]{2})[a-z0-9._]{3,30}(?<![._])$/
@@ -592,22 +595,22 @@ const buscarUsuarioPorUsername = async (req, res) => {
 
 const buscarUsuarioPorUsernameSocial = async (req, res) => {
         try {
-        const username_social = typeof req.params?.username === 'string' ? req.params.username.trim() : ''
+        const username_social = typeof req.params?.username_social === 'string' ? req.params.username_social.trim() : ''
 
         if (!username_social) {
             return res.status(400).json({ sucesso: false, mensagem: 'Informe um username válido.' })
         }
 
-        const usuario = await usuarioDAO.BuscarUsuarioPorUsernameSocial(username_social)
+        const usuario = await usuarioModel.BuscarUsuarioPorUsernameSocial(username_social)
 
         if (!usuario) {
             return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' })
         }
 
-        const acesso = await verificarAcesso(idDoVisualizador(req), Number(usuario.id))
+        const acesso = await middlewarePrivacidade.verificarAcesso(idDoVisualizador(req), Number(usuario.id))
 
         if (acesso === 'inexistente' || acesso === 'indisponivel') {
-            return responderAcessoNegado(res, acesso)
+            return middlewarePrivacidade.responderAcessoNegado(res, acesso)
         }
 
         if (acesso === 'restrito') {

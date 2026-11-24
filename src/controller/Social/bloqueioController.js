@@ -8,16 +8,14 @@ const responder = (res, status, sucesso, mensagem, extra = {}) =>
 
 const ERRO_INTERNO = 'Erro interno do servidor.'
 
-// POST /bloqueios
-// Body: { id_usuario, id_bloqueado }
+// POST /bloqueios/:id_usuario   Body: { id_bloqueado }
+// :id_usuario = eu (autorizarUsuario já garantiu).
 const bloquear = async (req, res) => {
     try {
-        const id_bloqueador = Number(req.body?.id_usuario)
+        const id_bloqueador = Number(req.params.id_usuario)
         const id_bloqueado = Number(req.body?.id_bloqueado)
 
-        if (!idValido(id_bloqueador) || !idValido(id_bloqueado)) {
-            return responder(res, 400, false, 'Informe id_usuario e id_bloqueado válidos.')
-        }
+        if (!idValido(id_bloqueado)) return responder(res, 400, false, 'Informe id_bloqueado válido.')
         if (id_bloqueador === id_bloqueado) return responder(res, 400, false, 'Você não pode bloquear a si mesmo.')
 
         if (!await privacidadeDAO.BuscarDono(id_bloqueado)) {
@@ -39,9 +37,7 @@ const desbloquear = async (req, res) => {
         const id_bloqueador = Number(req.params.id_usuario)
         const id_bloqueado = Number(req.params.id_bloqueado)
 
-        if (!idValido(id_bloqueador) || !idValido(id_bloqueado)) {
-            return responder(res, 400, false, 'Informe ids válidos.')
-        }
+        if (!idValido(id_bloqueado)) return responder(res, 400, false, 'Informe id_bloqueado válido.')
 
         const removeu = await bloqueioDAO.Desbloquear(id_bloqueador, id_bloqueado)
         if (!removeu) return responder(res, 404, false, 'Este usuário não está bloqueado.')
@@ -57,7 +53,6 @@ const desbloquear = async (req, res) => {
 const listarBloqueados = async (req, res) => {
     try {
         const id_usuario = Number(req.params.id_usuario)
-        if (!idValido(id_usuario)) return responder(res, 400, false, 'Id de usuário inválido.')
 
         const bloqueados = await bloqueioDAO.ListarBloqueados(id_usuario)
 

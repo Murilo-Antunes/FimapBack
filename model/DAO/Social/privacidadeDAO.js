@@ -1,4 +1,7 @@
-const knexConex = require('../../Database_config_knex/knexConex.js')
+const knex = require('knex')
+
+const knexConfig = require('../../Database_config_knex/KnexFile.js')
+const knexConex = knex(knexConfig.development)
 
 async function BuscarDono(id_usuario) {
     const row = await knexConex('tbl_usuario')

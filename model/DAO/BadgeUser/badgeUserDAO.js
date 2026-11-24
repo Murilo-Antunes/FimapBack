@@ -45,7 +45,7 @@ const PushBadgeUser = async (id_usuario, id_badge) => {
 
 // Lista badges do usuário, com "destaque" (0 ou 1) para o perfil social (false em erro)
 const GetBadgesByIdUsuario = async (id_usuario) => {
-    const sql = `select b.id, b.icone, b.nome, b.descricao, b.xp, ub.data_conquista, ub.destaque
+    const sql = `select b.id, b.icone, b.nome, b.descricao, b.xp, ub.data_conquista, ub.em_destaque
         from ${TABELA} ub
         inner join tbl_badge b on b.id = ub.id_badge
         where ub.id_usuario = ?
