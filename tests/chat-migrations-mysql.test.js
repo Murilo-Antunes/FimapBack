@@ -58,6 +58,10 @@ async function montarBase(db) {
         id INT PRIMARY KEY AUTO_INCREMENT, id_usuario INT, nome VARCHAR(45), descricao TEXT, valor_inicial DECIMAL(15,2),
         aporte_mensal DECIMAL(15,2), prazo INT, rentabilidade DECIMAL(5,2), data_criacao DATETIME
     ) ENGINE=InnoDB`)
+    await db.raw('CREATE TABLE tbl_configuracoes (id INT NOT NULL PRIMARY KEY) ENGINE=InnoDB')
+    await db.raw('CREATE TABLE tbl_notificacao (id INT NOT NULL PRIMARY KEY) ENGINE=InnoDB')
+    await db.raw('CREATE TABLE tbl_post (id INT NOT NULL PRIMARY KEY, conteudo TEXT NOT NULL) ENGINE=InnoDB')
+    await db.raw('CREATE TABLE tbl_codigo_otp (id INT NOT NULL PRIMARY KEY, id_usuario INT, ativo TINYINT) ENGINE=InnoDB')
     await db('tbl_usuario').insert([{ id: 3 }, { id: 4 }])
     await db('tbl_chat').insert([{ id: 7, id_usuario: 3 }, { id: 8, id_usuario: 4 }])
     await db('tbl_mensagem').insert([701, 702, 703].map((id) => ({ id, id_chat: 7, papel: 2 })))

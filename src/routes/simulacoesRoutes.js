@@ -1,13 +1,15 @@
 const express = require('express')
 const router = express.Router()
+const autenticar = require('../middlewares/autorization.js')
 
 const simulacaoInvestimentoController = require('../controller/Simulacoes/SimulacaoInvestimentoController.js')
 const simulacaoAmortizacaoController = require('../controller/Simulacoes/SimulacaoAmortizacaoController.js')
 const indicadoresController = require('../controller/Simulacoes/IndicadoresController.js')
 
-// As operações usam o ID autenticado pelo JWT, nunca o ID informado pelo cliente.
-
 router.get('/indicadores', indicadoresController.consultarIndicadores)
+
+// As simulações salvas pertencem ao usuário identificado pelo JWT.
+router.use(autenticar, require('../middlewares/autorizarUsuario.js'))
 
 router.get('/investimentos', simulacaoInvestimentoController.listarSimulacoesInvestimento)
 router.post('/investimentos', simulacaoInvestimentoController.criarSimulacaoInvestimento)
